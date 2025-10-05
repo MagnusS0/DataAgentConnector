@@ -1,0 +1,25 @@
+[project]
+name = "data-agent-stack"
+version = "0.1.0"
+description = "A blue print for building data agents that can connect to any SQL database."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "lancedb>=0.25.1",
+    "pydantic>=2.11.10",
+    "pydantic-settings>=2.11.0",
+    "rich>=14.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+    "ruff>=0.13.3",
+    "ty>=0.0.1a21",
+]
+mcp = [
+    "fastmcp>=2.12.4",
+]
+rest = [
+    "fastapi[standard]>=0.118.0",
+]
