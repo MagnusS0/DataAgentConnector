@@ -12,6 +12,7 @@ from app.db.sql_alchemy import (
     execute_select,
     get_table_preview,
 )
+from app.services.fk_analyzer import FKAnalyzer
 
 
 mcp = FastMCP(
@@ -80,6 +81,36 @@ def query_database(
     with connection_scope(database) as connection:
         rows = execute_select(connection, query)
         return [dict(row) for row in rows]
+
+
+@mcp.tool
+def join_path(
+    tables: Annotated[list[str], "Tables that should be connected via joins"],
+    database: Annotated[str, "Name of the database to use"],
+) -> str:
+    """
+    Suggest the shortest join path connecting the provided tables.
+
+    Returns a SQL JOIN clause that connects the tables.
+    The format is `FROM "table1" JOIN "table2" ON ...`.
+    You should decide when to use INNER JOIN vs LEFT JOIN based on the context of your query.
+    """
+
+    steps = FKAnalyzer.shortest_join_path(database, tables)
+    if not steps:
+        return f"No join path found for tables: {', '.join(tables)}"
+
+    start_table = tables[0]
+
+    join_parts = []
+    for step in steps:
+        on_conditions = " AND ".join(
+            f'"{step.left_table}"."{left_col}" = "{step.right_table}"."{right_col}"'
+            for left_col, right_col in step.column_pairs
+        )
+        join_parts.append(f'JOIN "{step.right_table}" ON {on_conditions}')
+
+    return f'FROM "{start_table}"\n' + "\n".join(join_parts)
 
 
 def setup_cors() -> list[Middleware]:
