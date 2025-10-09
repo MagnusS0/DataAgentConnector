@@ -4,8 +4,9 @@ from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from functools import cache
 
-from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy import create_engine, event, inspect, select, table, text
 from sqlalchemy.engine import Connection, Engine, Inspector, RowMapping
+from sqlalchemy.exc import StatementError
 
 from app.core.config import get_settings
 from app.models.database_registry import DatabaseRegistry, DatabaseConfig
@@ -24,11 +25,22 @@ def get_engine(database: str) -> Engine:
     config: DatabaseConfig = registry.get(database)
     engine = create_engine(config.url, pool_pre_ping=True)
 
-    @event.listens_for(engine, "connect")
-    def set_sqlite_readonly(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA query_only = 1")
-        cursor.close()
+    settings = get_settings()
+    allowed_commands = settings.allowed_sql_commands
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def enforce_read_only(conn, cursor, statement, parameters, context, executemany):
+        """Enforce read-only access by blocking non-SELECT statements."""
+        normalized = statement.strip().upper()
+
+        if not any(normalized.startswith(keyword) for keyword in allowed_commands):
+            raise StatementError(
+                "The operation is not allowed. only the following SQL commands are permitted: "
+                + ", ".join(allowed_commands),
+                statement,
+                parameters,
+                orig=None,
+            )
 
     return engine
 
@@ -63,9 +75,13 @@ def get_table_metadata(conn: Connection, table_name: str) -> dict:
 def get_table_preview(
     conn: Connection, table_name: str, limit: int = 5
 ) -> Sequence[RowMapping]:
-    result = conn.execute(
-        text(f"SELECT * FROM {table_name} LIMIT :limit"), {"limit": limit}
-    )
+    """Get a preview of table data using database-agnostic SQLAlchemy constructs."""
+    # Reflect the table from the database
+    tbl = table(table_name)
+
+    # Use SQLAlchemy's select with limit for database-agnostic query
+    stmt = select(tbl).limit(limit)
+    result = conn.execute(stmt)
     return result.mappings().all()
 
 

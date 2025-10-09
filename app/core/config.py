@@ -27,6 +27,18 @@ class Settings(BaseSettings):
     )
     databases: DatabaseRegistry | None = None
 
+    allowed_sql_commands: tuple[str, ...] = Field(
+        default=(
+            "SELECT",
+            "SHOW",
+            "DESCRIBE",
+            "DESC",
+            "EXPLAIN",
+            "WITH",
+        ),
+        description="SQL keywords that are allowed, defaults to read-only mode.",
+    )
+
     @field_validator("databases_file")
     @classmethod
     def ensure_file_exists(cls, value: Path) -> Path:
