@@ -6,14 +6,17 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "lancedb>=0.25.1",
-    "networkx>=3.5",
     "pydantic>=2.11.10",
     "pydantic-settings>=2.11.0",
     "rich>=14.1.0",
+    "scipy>=1.16.2",
     "sqlalchemy>=2.0.43",
 ]
 
 [dependency-groups]
+ai = [
+    "pydantic-ai-slim[openai]>=1.0.17",
+]
 dev = [
     "pre-commit>=4.3.0",
     "ruff>=0.13.3",
