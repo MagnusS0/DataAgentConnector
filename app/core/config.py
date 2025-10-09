@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     log_folder: Path = Field(default=Path("logs"))
 
+    llm_model_name: str | None = Field(default=None, alias="LLM_MODEL_NAME")
+    llm_base_url: str | None = Field(default=None, alias="LLM_BASE_URL")
+    llm_api_key: str | None = Field(default=None, alias="LLM_API_KEY")
+
     databases_file: Path = Field(
         default=Path("databases.toml"),
         description="TOML file defining available databases.",
@@ -35,6 +39,7 @@ class Settings(BaseSettings):
             "DESC",
             "EXPLAIN",
             "WITH",
+            "PRAGMA",
         ),
         description="SQL keywords that are allowed, defaults to read-only mode.",
     )
