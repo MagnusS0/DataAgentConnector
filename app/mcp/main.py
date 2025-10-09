@@ -12,7 +12,7 @@ from app.db.sql_alchemy import (
     execute_select,
     get_table_preview,
 )
-from app.services.fk_analyzer import FKAnalyzer
+from app.services.fk_analyzer import shortest_join_path, connect_tables
 
 
 mcp = FastMCP(
@@ -95,8 +95,21 @@ def join_path(
     The format is `FROM "table1" JOIN "table2" ON ...`.
     You should decide when to use INNER JOIN vs LEFT JOIN based on the context of your query.
     """
+    if len(tables) < 2:
+        return "At least two tables are required to form a join path."
 
-    steps = FKAnalyzer.shortest_join_path(database, tables)
+    if len(tables) == 2:
+        left, right = tables
+        try:
+            steps = shortest_join_path(database, left, right)
+        except ValueError as e:
+            return str(e)
+    else:
+        try:
+            steps = connect_tables(database, tables)
+        except ValueError as e:
+            return str(e)
+
     if not steps:
         return f"No join path found for tables: {', '.join(tables)}"
 

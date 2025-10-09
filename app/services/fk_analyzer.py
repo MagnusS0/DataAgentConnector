@@ -4,163 +4,252 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Iterable
 
-import networkx as nx
+import numpy as np
+from scipy.sparse import coo_matrix, csr_matrix, csr_array
+from scipy.sparse.csgraph import (
+    shortest_path,
+    connected_components,
+    minimum_spanning_tree,
+)
 
 from app.db.sql_alchemy import connection_scope, get_inspector
 
 
 @dataclass(frozen=True)
 class ForeignKeyConstraint:
-    """Represents a single foreign key relationship between two tables."""
-
     name: str | None
     from_table: str
     to_table: str
-    column_pairs: tuple[tuple[str, str], ...]
+    column_pairs: tuple[tuple[str, str], ...]  # (from_col, to_col)
 
 
 @dataclass(frozen=True)
 class JoinStep:
-    """A single hop in a join path between two tables."""
-
     left_table: str
     right_table: str
     column_pairs: tuple[tuple[str, str], ...]
     constraint_name: str | None
 
 
-class FKAnalyzer:
-    """Builds and queries a graph of foreign key relationships for a database."""
+@dataclass(frozen=True)
+class FKSnapshot:
+    csr: csr_array
+    name_to_idx: dict[str, int]
+    idx_to_name: list[str]
+    components: np.ndarray
+    edge_constraints: dict[frozenset[str], list[ForeignKeyConstraint]]
 
-    @classmethod
-    def shortest_join_path(cls, database: str, tables: Iterable[str]) -> list[JoinStep]:
-        """Return the shortest join path that connects all requested tables.
 
-        For two tables this is the standard shortest path. For more than two tables
-        the method computes an approximate Steiner tree that connects the tables with
-        the minimal number of joins. A ``ValueError`` is raised if any table is
-        unknown or if no join path exists between the requested tables.
-        """
+@lru_cache(maxsize=16)
+def _build_snapshot(database: str) -> FKSnapshot:
+    """
+    Build a snapshot of the foreign key graph for the given database.
+    Caches up to 16 databases.
 
-        requested = tuple(dict.fromkeys(tables))
-        if len(requested) < 2:
-            msg = "Provide at least two table names to compute a join path."
-            raise ValueError(msg)
+    Constructs:
+        - CSR adjacency matrix A ∈ {0,1}^{n*n}
+          where A[i,j] = 1 if a join (FK) exists between tables i and j.
+        - Connected components using `connected_components(A)`.
+        - Edge constraints registry: for each {a,b}, all FK constraints.
+    """
 
-        graph = cls._get_graph(database)
-        cls._ensure_tables_exist(graph, requested)
+    with connection_scope(database) as conn:
+        insp = get_inspector(conn)
+        tables = list(insp.get_table_names())
 
-        if len(requested) == 2:
-            return cls._pairwise_path(graph, requested[0], requested[1])
+        name_to_idx = {t: i for i, t in enumerate(tables)}
+        idx_to_name = tables[:]
 
-        steiner = nx.algorithms.approximation.steiner_tree(graph, set(requested))
-        if steiner.number_of_edges() == 0:
-            msg = f"No join path connects the tables: {', '.join(requested)}."
-            raise ValueError(msg)
+        rows: list[int] = []
+        cols: list[int] = []
+        data: list[int] = []
+        edge_constraints: dict[frozenset[str], list[ForeignKeyConstraint]] = {}
 
-        steps: list[JoinStep] = []
-        for left, right in nx.bfs_edges(steiner, source=requested[0]):
-            steps.append(cls._edge_to_step(graph, left, right))
-        return steps
+        for t in tables:
+            for fk in insp.get_foreign_keys(t) or ():
+                ref = fk.get("referred_table")
+                cons = tuple(fk.get("constrained_columns") or ())
+                refs = tuple(fk.get("referred_columns") or ())
+                if not ref or not cons:
+                    continue
 
-    @classmethod
-    def clear_cache(cls) -> None:
-        """Reset the cached graph builder."""
-
-        cls._get_graph.cache_clear()  # type: ignore[attr-defined]
-
-    @staticmethod
-    @lru_cache(maxsize=16)
-    def _get_graph(database: str) -> nx.Graph:
-        with connection_scope(database) as conn:
-            inspector = get_inspector(conn)
-            graph = nx.Graph()
-            tables = inspector.get_table_names()
-            for table in tables:
-                graph.add_node(table)
-                for fk in inspector.get_foreign_keys(table):
-                    referred_table = fk.get("referred_table")
-                    constrained_columns = fk.get("constrained_columns") or []
-                    referred_columns = fk.get("referred_columns") or []
-                    if referred_table is None or not constrained_columns:
-                        continue
-
-                    column_pairs = tuple(zip(constrained_columns, referred_columns))
-                    constraint = ForeignKeyConstraint(
-                        name=fk.get("name"),
-                        from_table=table,
-                        to_table=referred_table,
-                        column_pairs=column_pairs,
-                    )
-
-                    if graph.has_edge(table, referred_table):
-                        graph[table][referred_table]["constraints"].append(constraint)
-                    else:
-                        graph.add_edge(
-                            table,
-                            referred_table,
-                            weight=1,
-                            constraints=[constraint],
-                        )
-
-            return graph
-
-    @staticmethod
-    def _ensure_tables_exist(graph: nx.Graph, tables: Iterable[str]) -> None:
-        missing = [table for table in tables if table not in graph]
-        if missing:
-            available = ", ".join(sorted(graph.nodes))
-            joined = ", ".join(missing)
-            msg = f"Unknown tables: {joined}. Available tables: {available}."
-            raise ValueError(msg)
-
-    @classmethod
-    def _pairwise_path(cls, graph: nx.Graph, left: str, right: str) -> list[JoinStep]:
-        try:
-            node_path = nx.shortest_path(graph, left, right, weight="weight")
-        except nx.NetworkXNoPath as exc:
-            msg = f"No join path between '{left}' and '{right}'."
-            raise ValueError(msg) from exc
-
-        steps: list[JoinStep] = []
-        for idx in range(len(node_path) - 1):
-            origin = node_path[idx]
-            destination = node_path[idx + 1]
-            steps.append(cls._edge_to_step(graph, origin, destination))
-        return steps
-
-    @staticmethod
-    def _edge_to_step(graph: nx.Graph, left: str, right: str) -> JoinStep:
-        edge_attrs = graph.get_edge_data(left, right)
-        if edge_attrs is None:
-            msg = f"No foreign key relationship between '{left}' and '{right}'."
-            raise ValueError(msg)
-
-        constraints: list[ForeignKeyConstraint] = edge_attrs["constraints"]
-        for constraint in constraints:
-            if constraint.from_table == left and constraint.to_table == right:
-                return JoinStep(
-                    left_table=left,
-                    right_table=right,
-                    column_pairs=constraint.column_pairs,
-                    constraint_name=constraint.name,
+                c = ForeignKeyConstraint(
+                    name=fk.get("name"),
+                    from_table=t,
+                    to_table=ref,
+                    column_pairs=tuple(zip(cons, refs)),
                 )
-            if constraint.from_table == right and constraint.to_table == left:
-                reversed_pairs = tuple(
-                    (to_col, from_col) for from_col, to_col in constraint.column_pairs
-                )
-                return JoinStep(
-                    left_table=left,
-                    right_table=right,
-                    column_pairs=reversed_pairs,
-                    constraint_name=constraint.name,
-                )
+                edge_constraints.setdefault(frozenset({t, ref}), []).append(c)
 
-        constraint_names = ", ".join(
-            constraint.name or "<unnamed>" for constraint in constraints
-        )
-        msg = (
-            "No constraint orientation matches the requested edge between "
-            f"'{left}' and '{right}'. Known constraints: {constraint_names}."
-        )
-        raise ValueError(msg)
+                # undirected unit edge for BFS/Dijkstra
+                ui, vi = name_to_idx[t], name_to_idx[ref]
+                rows.extend([ui, vi])
+                cols.extend([vi, ui])
+                data.extend([1, 1])
+
+        n = len(tables)
+        csr = coo_matrix((data, (rows, cols)), shape=(n, n)).tocsr()
+        _, comps = connected_components(csr, directed=False)
+
+        return FKSnapshot(csr, name_to_idx, idx_to_name, comps, edge_constraints)
+
+
+def clear_cache() -> None:
+    """Clear the snapshot cache."""
+    _build_snapshot.cache_clear()
+
+
+def shortest_join_path(database: str, left: str, right: str) -> list[JoinStep]:
+    """Return the shortest join path between two tables.
+
+    Args:
+        database: The name of the database to query.
+        left: The starting table name.
+        right: The ending table name.
+
+    Returns:
+        A list of JoinStep objects representing the path.
+
+    Raises:
+        ValueError: If no path exists or if tables are unknown.
+    """
+    fk_graph = _build_snapshot(database)
+    _ensure_known(fk_graph, (left, right))
+    source_index, target_index = fk_graph.name_to_idx[left], fk_graph.name_to_idx[right]
+    if fk_graph.components[source_index] != fk_graph.components[target_index]:
+        raise ValueError(f"No join path between '{left}' and '{right}'.")
+
+    dist, pred = shortest_path(
+        fk_graph.csr,
+        directed=False,
+        unweighted=True,
+        indices=source_index,
+        return_predecessors=True,
+    )
+    if not np.isfinite(dist[target_index]):
+        raise ValueError(f"No join path between '{left}' and '{right}'.")
+
+    path = _reconstruct_path(pred, source_index, target_index)
+    return _steps_from_path(fk_graph, path)
+
+
+def connect_tables(database: str, tables: Iterable[str]) -> list[JoinStep]:
+    """Return a minimal join network connecting all given tables.
+
+    This method computes an approximate Steiner tree to find the minimal
+    set of joins needed to connect all tables in the `tables` argument.
+
+    Args:
+        database: The name of the database to query.
+        tables: An iterable of table names to connect.
+
+    Returns:
+        A list of JoinStep objects representing the connection path.
+
+    Raises:
+        ValueError: If no path exists, tables are unknown, or < 2 tables are given.
+    """
+    requested = list(dict.fromkeys(tables))
+    if len(requested) < 2:
+        raise ValueError("Provide at least two tables.")
+    fk_graph = _build_snapshot(database)
+    _ensure_known(fk_graph, requested)
+
+    term_idx = [fk_graph.name_to_idx[t] for t in requested]
+    if len(set(map(int, fk_graph.components[term_idx]))) > 1:
+        raise ValueError(f"No join path connects: {', '.join(requested)}.")
+
+    # Distances from terminals
+    dists, preds = shortest_path(
+        fk_graph.csr,
+        directed=False,
+        unweighted=True,
+        indices=term_idx,
+        return_predecessors=True,
+    )
+    k = len(term_idx)
+    W = np.full((k, k), np.inf)
+    for i in range(k):
+        for j in range(i + 1, k):
+            w = dists[i, term_idx[j]]
+            if not np.isfinite(w):
+                raise ValueError(f"No join path connects: {', '.join(requested)}.")
+            W[i, j] = W[j, i] = w
+
+    # MST on the complete terminal graph
+    mst = minimum_spanning_tree(csr_matrix(W)).tocoo()
+
+    # Expand MST edges back to original graph
+    edges: set[tuple[int, int]] = set()
+    for i, j in zip(mst.row, mst.col):
+        si, tj = term_idx[i], term_idx[j]
+        path = _reconstruct_path(preds[i], si, tj)
+        edges.update({(u, v) for u, v in zip(path, path[1:])})
+        edges.update({(v, u) for u, v in zip(path, path[1:])})  # undirected
+
+    # BFS order over steiner edges starting at first terminal
+    ordered = _bfs_edges_from(term_idx[0], edges)
+    return [_edge_to_step(fk_graph, u, v) for (u, v) in ordered]
+
+
+def _ensure_known(g: FKSnapshot, names: Iterable[str]) -> None:
+    """Raise ValueError if any table names are not in the graph."""
+    missing = [t for t in names if t not in g.name_to_idx]
+    if missing:
+        avail = ", ".join(sorted(g.name_to_idx))
+        raise ValueError(f"Unknown tables: {', '.join(missing)}. Available: {avail}.")
+
+
+def _reconstruct_path(pred_row: np.ndarray, s: int, t: int) -> list[int]:
+    """Reconstruct a path from a scipy predecessor matrix."""
+    path: list[int] = []
+    cur = int(t)
+    while cur != -9999 and cur != s:
+        path.append(cur)
+        cur = int(pred_row[cur])
+    path.append(s)
+    path.reverse()
+    return path
+
+
+def _edge_to_step(g: FKSnapshot, u: int, v: int) -> JoinStep:
+    """Convert a graph edge (u, v) to a JoinStep."""
+    a, b = g.idx_to_name[u], g.idx_to_name[v]
+    cs = g.edge_constraints.get(frozenset({a, b})) or []
+    for c in cs:
+        if c.from_table == a and c.to_table == b:
+            return JoinStep(a, b, c.column_pairs, c.name)
+        if c.from_table == b and c.to_table == a:
+            pairs = tuple((to_col, from_col) for (from_col, to_col) in c.column_pairs)
+            return JoinStep(a, b, pairs, c.name)
+    names = ", ".join(c.name or "<unnamed>" for c in cs) or "<none>"
+    raise ValueError(
+        f"No oriented FK fits edge '{a}' → '{b}'. Known constraints: {names}."
+    )
+
+
+def _steps_from_path(g: FKSnapshot, path: list[int]) -> list[JoinStep]:
+    """Convert a list of node indices into a list of JoinSteps."""
+    return [_edge_to_step(g, u, v) for u, v in zip(path, path[1:])]
+
+
+def _bfs_edges_from(
+    start: int, undirected_edges: set[tuple[int, int]]
+) -> list[tuple[int, int]]:
+    """Return a BFS-ordered list of directed edges from a set of undirected edges."""
+    adj: dict[int, list[int]] = {}
+    for u, v in undirected_edges:
+        adj.setdefault(u, []).append(v)
+
+    seen: set[int] = {start}
+    q: list[int] = [start]
+    out: list[tuple[int, int]] = []
+
+    while q:
+        u = q.pop(0)
+        for v in adj.get(u, []):
+            if v not in seen:
+                seen.add(v)
+                q.append(v)
+                out.append((u, v))
+    return out
