@@ -12,7 +12,10 @@ from scipy.sparse.csgraph import (
     minimum_spanning_tree,
 )
 
+from app.core.logging import get_logger
 from app.db.sql_alchemy import connection_scope, get_inspector
+
+logger = get_logger("services.fk_analyzer")
 
 
 @dataclass(frozen=True)
@@ -65,12 +68,19 @@ def _build_snapshot(database: str) -> FKSnapshot:
         data: list[int] = []
         edge_constraints: dict[frozenset[str], list[ForeignKeyConstraint]] = {}
 
+        missing_refs: set[tuple[str, str]] = set()
+
         for t in tables:
             for fk in insp.get_foreign_keys(t) or ():
                 ref = fk.get("referred_table")
                 cons = tuple(fk.get("constrained_columns") or ())
                 refs = tuple(fk.get("referred_columns") or ())
                 if not ref or not cons:
+                    continue
+
+                if ref not in name_to_idx:
+                    # skip dangling FK targets
+                    missing_refs.add((t, ref))
                     continue
 
                 c = ForeignKeyConstraint(
@@ -90,6 +100,14 @@ def _build_snapshot(database: str) -> FKSnapshot:
         n = len(tables)
         csr = coo_matrix((data, (rows, cols)), shape=(n, n)).tocsr()
         _, comps = connected_components(csr, directed=False)
+
+        if missing_refs:
+            missing_pairs = ", ".join(
+                f"{src}->{dst}" for src, dst in sorted(missing_refs)
+            )
+            logger.warning(
+                "Foreign key references unknown table(s) skipped: %s", missing_pairs
+            )
 
         return FKSnapshot(csr, name_to_idx, idx_to_name, comps, edge_constraints)
 

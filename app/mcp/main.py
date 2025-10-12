@@ -13,6 +13,7 @@ from app.db.sql_alchemy import (
     get_table_preview,
 )
 from app.services.fk_analyzer import shortest_join_path, connect_tables
+from app.models.database_registry import TableMetadata
 
 
 mcp = FastMCP(
@@ -30,7 +31,7 @@ def get_databases() -> list[dict[str, str]]:
     """
     Use this to get a list of available databases and their descriptions.
     This is usually the first tool to call. You use the 'name' field from the output
-    to specify which database to connect to in subsequent calls.
+    to specify which database to connect to in other tools on this mcp server.
     """
     return list_databases()
 
@@ -46,7 +47,7 @@ def show_tables(database: str) -> list[str]:
 def describe_table(
     table_name: Annotated[str, "Name of the table to describe"],
     database: Annotated[str, "Name of the database to use"],
-) -> dict:
+) -> TableMetadata:
     """
     Get metadata for a specific table.
     Includes columns, primary keys, foreign keys, and indexes.
@@ -89,11 +90,10 @@ def join_path(
     database: Annotated[str, "Name of the database to use"],
 ) -> str:
     """
-    Suggest the shortest join path connecting the provided tables.
+    This tool suggests the shortest join path connecting the provided tables.
 
     Returns a SQL JOIN clause that connects the tables.
-    The format is `FROM "table1" JOIN "table2" ON ...`.
-    You should decide when to use INNER JOIN vs LEFT JOIN based on the context of your query.
+    You need to decide when to use INNER JOIN vs LEFT JOIN based on the context of your query.
     """
     if len(tables) < 2:
         return "At least two tables are required to form a join path."

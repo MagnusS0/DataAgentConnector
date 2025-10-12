@@ -4,12 +4,16 @@ from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from functools import cache
 
-from sqlalchemy import create_engine, event, inspect, select, table, text
+from sqlalchemy import column, create_engine, event, inspect, select, table, text
 from sqlalchemy.engine import Connection, Engine, Inspector, RowMapping
-from sqlalchemy.exc import StatementError
+from sqlalchemy.exc import NoSuchTableError, ProgrammingError, StatementError
 
 from app.core.config import get_settings
-from app.models.database_registry import DatabaseRegistry, DatabaseConfig
+from app.models.database_registry import (
+    DatabaseRegistry, 
+    DatabaseConfig,
+    TableMetadata
+)
 
 
 def get_registry() -> DatabaseRegistry:
@@ -62,26 +66,41 @@ def list_tables(conn: Connection) -> list[str]:
     return get_inspector(conn).get_table_names()
 
 
-def get_table_metadata(conn: Connection, table_name: str) -> dict:
+def get_table_metadata(conn: Connection, table_name: str) -> TableMetadata:
     inspector = get_inspector(conn)
-    return {
-        "columns": str(inspector.get_columns(table_name)),
+    if not inspector.has_table(table_name):
+        raise ValueError(f'Table "{table_name}" does not exist.')
+    raw_metadata = {
+        "columns": inspector.get_columns(table_name),
         "primary_keys": inspector.get_pk_constraint(table_name),
         "foreign_keys": inspector.get_foreign_keys(table_name),
         "indexes": inspector.get_indexes(table_name),
     }
 
+    metadata = TableMetadata.from_sqlalchemy(raw_metadata)
+    return metadata
+
 
 def get_table_preview(
     conn: Connection, table_name: str, limit: int = 5
 ) -> Sequence[RowMapping]:
-    """Get a preview of table data using database-agnostic SQLAlchemy constructs."""
-    # Reflect the table from the database
-    tbl = table(table_name)
+    """Get a preview of table data"""
+    inspector = get_inspector(conn)
+    try:
+        columns = inspector.get_columns(table_name)
+    except NoSuchTableError as exc:
+        raise ValueError(f'Table "{table_name}" does not exist.') from exc
 
-    # Use SQLAlchemy's select with limit for database-agnostic query
+    if not columns:
+        return []
+
+    tbl = table(table_name, *[column(col["name"]) for col in columns])
+
     stmt = select(tbl).limit(limit)
-    result = conn.execute(stmt)
+    try:
+        result = conn.execute(stmt)
+    except ProgrammingError as exc:
+        raise ValueError(f'Failed to preview table "{table_name}": {exc.orig}') from exc
     return result.mappings().all()
 
 

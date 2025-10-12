@@ -43,3 +43,30 @@ class DatabaseRegistry(BaseModel):
 
         data = tomllib.loads(path.read_text())
         return cls(**data)
+
+
+class TableMetadata(BaseModel):
+    columns: list[dict]
+    primary_keys: dict
+    foreign_keys: list[dict]
+    indexes: list[dict]
+
+    @classmethod
+    def from_sqlalchemy(cls, raw: dict) -> "TableMetadata":
+        def serialize_column(col: dict) -> dict:
+            col = col.copy()
+            if "type" in col:
+                col["type"] = str(col["type"])
+            return col
+
+        columns = [serialize_column(c) for c in raw.get("columns", [])]
+        primary_keys = raw.get("primary_keys", {})
+        foreign_keys = raw.get("foreign_keys", [])
+        indexes = raw.get("indexes", [])
+
+        return cls(
+            columns=columns,
+            primary_keys=primary_keys,
+            foreign_keys=foreign_keys,
+            indexes=indexes,
+        )
