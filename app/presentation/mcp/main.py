@@ -1,19 +1,19 @@
 from typing import Annotated
 
 from fastmcp import FastMCP
-from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 
 from app.db.sql_alchemy import (
     connection_scope,
+    execute_select,
+    get_table_metadata,
+    get_table_preview,
     list_databases,
     list_tables,
-    get_table_metadata,
-    execute_select,
-    get_table_preview,
 )
-from app.services.fk_analyzer import shortest_join_path, connect_tables
 from app.models.database_registry import TableMetadata
+from app.services.fk_analyzer import connect_tables, shortest_join_path
 
 
 mcp = FastMCP(
@@ -138,7 +138,7 @@ def setup_cors() -> list[Middleware]:
         Middleware(
             CORSMiddleware,
             allow_origins=["*"],
-            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["*"],
             allow_credentials=False,
             expose_headers=expose_headers,
@@ -146,6 +146,15 @@ def setup_cors() -> list[Middleware]:
     ]
 
     return middleware
+
+
+def create_mcp_app():
+    """Return the MCP server as an ASGI application."""
+    return mcp.http_app(
+        transport="streamable-http",
+        middleware=setup_cors(),
+        path="/",
+    )
 
 
 if __name__ == "__main__":

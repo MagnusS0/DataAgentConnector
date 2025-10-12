@@ -77,7 +77,7 @@ def get_widgets_manifest() -> dict[str, Any]:
         ],
         "gridData": {"w": 30, "h": 18},
         "mcp_tool": {
-            "mcp_server": "DataAgentStack",
+            "mcp_server": "database-connector",
             "tool_id": "query_database",
         },
     }
