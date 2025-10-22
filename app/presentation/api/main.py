@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.types import StatelessLifespan, StatefulLifespan
 
 from app.core.config import get_settings
@@ -17,6 +19,7 @@ def create_app(
         title="Data Agent Connector API",
         description="REST endpoints for Data Agent Connector functionality.",
         lifespan=lifespan,
+        default_response_class=ORJSONResponse,
     )
 
     application.add_middleware(
@@ -26,6 +29,7 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    application.add_middleware(GZipMiddleware, minimum_size=1024)
 
     application.include_router(openbb_widgets_router)
 
