@@ -14,6 +14,13 @@ from app.db.sql_alchemy import (
 )
 from app.models.database_registry import TableMetadata
 from app.services.fk_analyzer import connect_tables, shortest_join_path
+from app.services.annotate.annotation_store import (
+    get_table_descriptions,
+    TableDescription,
+)
+from app.core.config import get_settings
+
+settings = get_settings()
 
 
 mcp = FastMCP(
@@ -37,10 +44,12 @@ def get_databases() -> list[dict[str, str]]:
 
 
 @mcp.tool
-def show_tables(database: str) -> list[str]:
-    """List all tables in the connected database."""
+def show_tables(database: str) -> list[TableDescription]:
+    """List tables in the connected database along with stored descriptions."""
     with connection_scope(database) as connection:
-        return list_tables(connection)
+        tables = list_tables(connection)
+
+    return get_table_descriptions(database, tuple(tables))
 
 
 @mcp.tool
@@ -80,7 +89,7 @@ def query_database(
     Only SELECT queries are allowed.
     """
     with connection_scope(database) as connection:
-        rows = execute_select(connection, query)
+        rows = execute_select(connection, query, limit=settings.limit)
         return [dict(row) for row in rows]
 
 

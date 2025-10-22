@@ -103,9 +103,14 @@ def get_fk_graph(conn: Connection):
     return inspector.get_sorted_table_and_fkc_names()
 
 
-def execute_select(conn: Connection, query: str) -> Sequence[RowMapping]:
+def execute_select(
+    conn: Connection, query: str, limit: int | None = None
+) -> Sequence[RowMapping]:
     result = conn.execute(text(query))
-    return result.mappings().all()
+    mappings = result.mappings()
+    if limit is not None:
+        return mappings.fetchmany(limit)
+    return mappings.all()
 
 
 def list_databases() -> list[dict[str, str]]:

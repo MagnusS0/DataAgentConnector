@@ -2,8 +2,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.core.logging import get_logger
 from app.presentation.api.main import create_app as create_api_app
 from app.presentation.mcp.main import create_mcp_app
+from app.services.annotate.annotation_store import store_table_descriptions
+
+logger = get_logger("main")
 
 
 def build_application() -> FastAPI:
@@ -15,6 +19,11 @@ def build_application() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        try:
+            await store_table_descriptions()
+        except Exception as exc:
+            logger.exception("Failed to store table annotations on startup: %s", exc)
+
         async with original_lifespan(app):
             async with mcp_app.lifespan(app):
                 yield
