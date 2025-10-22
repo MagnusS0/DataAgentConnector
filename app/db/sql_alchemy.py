@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from functools import cache
@@ -9,11 +7,7 @@ from sqlalchemy.engine import Connection, Engine, Inspector, RowMapping
 from sqlalchemy.exc import NoSuchTableError, ProgrammingError, StatementError
 
 from app.core.config import get_settings
-from app.models.database_registry import (
-    DatabaseRegistry, 
-    DatabaseConfig,
-    TableMetadata
-)
+from app.models.database_registry import DatabaseRegistry, DatabaseConfig, TableMetadata
 
 
 def get_registry() -> DatabaseRegistry:
