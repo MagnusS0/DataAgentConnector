@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from functools import cache
@@ -9,11 +7,7 @@ from sqlalchemy.engine import Connection, Engine, Inspector, RowMapping
 from sqlalchemy.exc import NoSuchTableError, ProgrammingError, StatementError
 
 from app.core.config import get_settings
-from app.models.database_registry import (
-    DatabaseRegistry, 
-    DatabaseConfig,
-    TableMetadata
-)
+from app.models.database_registry import DatabaseRegistry, DatabaseConfig, TableMetadata
 
 
 def get_registry() -> DatabaseRegistry:
@@ -109,9 +103,14 @@ def get_fk_graph(conn: Connection):
     return inspector.get_sorted_table_and_fkc_names()
 
 
-def execute_select(conn: Connection, query: str) -> Sequence[RowMapping]:
+def execute_select(
+    conn: Connection, query: str, limit: int | None = None
+) -> Sequence[RowMapping]:
     result = conn.execute(text(query))
-    return result.mappings().all()
+    mappings = result.mappings()
+    if limit is not None:
+        return mappings.fetchmany(limit)
+    return mappings.all()
 
 
 def list_databases() -> list[dict[str, str]]:

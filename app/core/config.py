@@ -30,6 +30,32 @@ class Settings(BaseSettings):
         description="TOML file defining available databases.",
     )
     databases: DatabaseRegistry | None = None
+    limit: int | None = Field(
+        default=25,
+        description="Maximum number of rows to return for SELECT queries.",
+    )
+
+    lance_db_path: Path = Field(
+        default=Path("./data/lance_db"),
+        description="Path to the LanceDB database for storing table annotations.",
+    )
+    n_dims: int = Field(
+        default=768,
+        description="Dimensionality of the embedding vectors.",
+    )
+    embedding_model_name: str = Field(
+        default="google/embeddinggemma-300m",
+        description="Name of the embedding model to use.",
+    )
+    device: str = Field(
+        default="cpu",
+        description="Device to run the embedding model on (e.g., 'cpu', 'cuda').",
+    )
+
+    annotate_on_startup: bool = Field(
+        default=True,
+        description="Whether to annotate tables on startup if no annotation exists.",
+    )
 
     allowed_sql_commands: tuple[str, ...] = Field(
         default=(

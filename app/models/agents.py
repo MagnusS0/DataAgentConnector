@@ -7,21 +7,20 @@ class BaseDescription(BaseModel):
         description="A brief but detailed summary of a table's contents and potential uses.",
     )
 
-    max_words: int = 100
-
     @field_validator("description")
     @classmethod
-    def check_word_count(cls, v):
+    def check_word_count(cls, v, info):
         words = v.split()
-        if len(words) > cls.max_words:
+        max_words = info.data.get("max_words", 100)
+        if len(words) > max_words:
             raise ValueError(
-                f"Description must be at most {cls.max_words} words, please shorten it."
+                f"Description must be at most {max_words} words, please shorten it."
             )
         return v
 
 
 class TableDescription(BaseDescription):
-    pass
+    max_words: int = 100
 
 
 class DatabaseDescription(BaseDescription):
