@@ -2,7 +2,7 @@ import asyncio
 from typing import TypedDict
 from functools import lru_cache
 
-from app.db.lance_db import get_lance_db
+from app.db.lance_db import get_lance_db, open_or_create_table
 from app.services.annotate.table_annotation import annotate_database, save_to_lance_db
 from app.core.logging import get_logger
 from app.core.config import get_settings
@@ -58,7 +58,7 @@ def get_table_descriptions(database: str, tables: tuple[str]) -> list[TableDescr
     If no descriptions exist, return None for each table.
     """
     db = get_lance_db()
-    table_annotations = db.open_table("table_annotations")
+    table_annotations = open_or_create_table(db, "table_annotations")
 
     result = (
         table_annotations.search()

@@ -74,3 +74,13 @@ async def batch_insert_async(
             await table.add(records[i : i + batch_size])
     else:
         await table.add(records)
+
+def open_or_create_table(
+    db: DBConnection, table_name: str
+) -> Table:
+    """Open an existing LanceDB table or create a new one if it doesn't exist."""
+    if table_name in db.table_names():
+        table = db.open_table(table_name)
+    else:
+        table = db.create_table(table_name, schema=TableAnnotation)
+    return table
