@@ -9,8 +9,10 @@ from app.db.sql_alchemy import (
     execute_select,
     get_table_metadata,
     get_table_preview,
+    get_veiw_definition,
     list_databases,
     list_tables,
+    list_views,
 )
 from app.models.database_registry import TableMetadata
 from app.services.fk_analyzer import connect_tables, shortest_join_path
@@ -50,6 +52,25 @@ def show_tables(database: str) -> list[TableDescription]:
         tables = list_tables(connection)
 
     return get_table_descriptions(database, tuple(tables))
+
+@mcp.tool
+def show_views(database: str) -> list[str]:
+    """List views in the connected database."""
+    with connection_scope(database) as connection:
+        views = list_views(connection)
+
+    return views
+
+@mcp.tool
+def describe_view(
+    view_name: Annotated[str, "Name of the view to describe"],
+    database: Annotated[str, "Name of the database to use"],
+) -> str:
+    """
+    Get the SQL definition of a specific view.
+    """
+    with connection_scope(database) as connection:
+        return get_veiw_definition(connection, view_name)
 
 
 @mcp.tool

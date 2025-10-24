@@ -59,6 +59,8 @@ def get_inspector(conn: Connection) -> Inspector:
 def list_tables(conn: Connection) -> list[str]:
     return get_inspector(conn).get_table_names()
 
+def list_views(conn: Connection) -> list[str]:
+    return get_inspector(conn).get_view_names()
 
 def get_table_metadata(conn: Connection, table_name: str) -> TableMetadata:
     inspector = get_inspector(conn)
@@ -97,6 +99,15 @@ def get_table_preview(
         raise ValueError(f'Failed to preview table "{table_name}": {exc.orig}') from exc
     return result.mappings().all()
 
+def get_veiw_definition(conn: Connection, view_name: str) -> str:
+    inspector = get_inspector(conn)
+    try:
+        view_definition = inspector.get_view_definition(view_name)
+    except NoSuchTableError as exc:
+        raise ValueError(f'View "{view_name}" does not exist.') from exc
+    if view_definition is None:
+        raise ValueError(f'View definition for "{view_name}" could not be retrieved.')
+    return view_definition
 
 def get_fk_graph(conn: Connection):
     inspector = get_inspector(conn)
