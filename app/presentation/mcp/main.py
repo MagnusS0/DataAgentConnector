@@ -10,6 +10,7 @@ from app.db.sql_alchemy import (
     get_table_metadata,
     get_table_preview,
     get_veiw_definition,
+    get_distinct_column_values,
     list_databases,
     list_tables,
     list_views,
@@ -48,7 +49,7 @@ def get_databases() -> list[dict[str, str]]:
 
 @mcp.tool
 def show_tables(database: str) -> list[TableDescription]:
-    """List tables in the connected database along with stored descriptions."""
+    """List tables in the connected database along with descriptions."""
     with connection_scope(database) as connection:
         tables = list_tables(connection)
 
@@ -83,10 +84,31 @@ def describe_table(
 ) -> TableMetadata:
     """
     Get metadata for a specific table.
+    Use this to understand the structure of the table and what columns it contains.
     Includes columns, primary keys, foreign keys, and indexes.
     """
     with connection_scope(database) as connection:
         return get_table_metadata(connection, table_name)
+
+
+@mcp.tool
+def get_distinct_values(
+    table_name: Annotated[str, "Name of the table to get distinct values from"],
+    column_name: Annotated[str, "Name of the column to get distinct values from"],
+    database: Annotated[str, "Name of the database to use"],
+    limit: Annotated[int, "Maximum number of distinct values to return"] = 25,
+) -> list[str]:
+    """
+    Get distinct values from a specific column in a table.
+    Useful for understanding the range of values in categorical columns.
+    """
+    with connection_scope(database) as connection:
+        return get_distinct_column_values(
+            conn=connection,
+            table_name=table_name,
+            column_name=column_name,
+            limit=limit,
+        )
 
 
 @mcp.tool
@@ -113,6 +135,7 @@ def preview_table(
 ) -> list[dict]:
     """
     Preview the first few rows of a specific table.
+    Can be used to get a quick look at the data contained in the table.
     Default to 5 rows.
     """
     with connection_scope(database) as connection:
@@ -141,6 +164,8 @@ def join_path(
 ) -> str:
     """
     This tool suggests the shortest join path connecting the provided tables.
+    It uses the database schema to find the most efficient way to join the tables.
+    Provide a list of table names that you want to connect.
 
     Returns a SQL JOIN clause that connects the tables.
     You need to decide when to use INNER JOIN vs LEFT JOIN based on the context of your query.
