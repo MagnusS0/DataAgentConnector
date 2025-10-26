@@ -5,6 +5,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.models.database_registry import DatabaseRegistry
+from app.models.indexing import ExtractionOptions
 
 
 class Settings(BaseSettings):
@@ -55,6 +56,10 @@ class Settings(BaseSettings):
     annotate_on_startup: bool = Field(
         default=True,
         description="Whether to annotate tables on startup if no annotation exists.",
+    )
+    fts_extraction_options: ExtractionOptions = Field(
+        default_factory=ExtractionOptions,
+        description="Column-content extraction tuning for FTS indexing.",
     )
 
     allowed_sql_commands: tuple[str, ...] = Field(

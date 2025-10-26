@@ -20,6 +20,7 @@ from app.services.annotate.annotation_store import (
     get_table_descriptions,
     TableDescription,
 )
+from app.services.indexing.search import search_column_contents
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -53,6 +54,7 @@ def show_tables(database: str) -> list[TableDescription]:
 
     return get_table_descriptions(database, tuple(tables))
 
+
 @mcp.tool
 def show_views(database: str) -> list[str]:
     """List views in the connected database."""
@@ -60,6 +62,7 @@ def show_views(database: str) -> list[str]:
         views = list_views(connection)
 
     return views
+
 
 @mcp.tool
 def describe_view(
@@ -87,6 +90,23 @@ def describe_table(
 
 
 @mcp.tool
+def find_relevant_columns_and_content(
+    query: Annotated[str, "The search query to find relevant columns for"],
+    database: Annotated[str, "Name of the database to use"],
+    top_k: Annotated[int, "Number of top relevant contents to return"] = 5,
+) -> list[str]:
+    """
+    This tool searches for relevant content in columns based on the provided query.
+    It uses a BM25 index over the distinct values in textual columns to find matches.
+    For example if you need to find the column for a specific product name, or look for
+    customer names related to a certain city, you can use this tool to find the relevant columns.
+
+    Returns the top_k most relevant contents including table, and column information.
+    """
+    return search_column_contents(database=database, query=query, top_k=top_k)
+
+
+@mcp.tool
 def preview_table(
     table_name: Annotated[str, "Name of the table to preview"],
     database: Annotated[str, "Name of the database to use"],
@@ -97,7 +117,7 @@ def preview_table(
     """
     with connection_scope(database) as connection:
         rows = get_table_preview(connection, table_name)
-        return [dict(row) for row in rows]
+        return rows
 
 
 @mcp.tool
