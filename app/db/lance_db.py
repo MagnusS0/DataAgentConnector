@@ -1,39 +1,17 @@
-from hashlib import sha256
 from pathlib import Path
-from typing import Optional
+from typing import TypeVar, Literal
+from async_lru import alru_cache
 
 import lancedb
 from lancedb import DBConnection, AsyncConnection
-from lancedb.pydantic import LanceModel, Vector
+from lancedb.pydantic import LanceModel
 from lancedb.db import Table, AsyncTable
-from pydantic import field_validator
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-
-class TableAnnotation(LanceModel):
-    """Schema for table annotations stored in LanceDB."""
-
-    database_name: str
-    table_name: str
-    description: str
-    embeddings: Optional[Vector(settings.n_dims)] = None  # type: ignore[valid-type]
-    metadata_json: str = ""
-    schema_hash: str | None = None
-
-    @field_validator("schema_hash", mode="before")
-    @classmethod
-    def compute_schema_hash(cls, v, info):
-        """Compute schema hash if not provided."""
-        if v:
-            return v
-        data = info.data
-        hash_input = (
-            f"{data['database_name']}.{data['table_name']}.{data['metadata_json']}"
-        )
-        return sha256(hash_input.encode("utf-8")).hexdigest()
+T = TypeVar("T", bound=LanceModel)
 
 
 def get_lance_db() -> DBConnection:
@@ -43,6 +21,7 @@ def get_lance_db() -> DBConnection:
     return lancedb.connect(db_path)
 
 
+@alru_cache(maxsize=1)
 async def get_lance_db_async() -> AsyncConnection:
     """Get or create a LanceDB asynchronous connection."""
     db_path = Path(settings.lance_db_path)
@@ -52,35 +31,61 @@ async def get_lance_db_async() -> AsyncConnection:
 
 def batch_insert(
     table: Table,
-    records: list[TableAnnotation] | TableAnnotation,
+    records: list[T] | T,
+    *,
     batch_size: int = 1000,
+    mode: Literal["overwrite", "append"] = "append",
 ):
     """Insert records into a LanceDB table."""
     if isinstance(records, list):
         for i in range(0, len(records), batch_size):
-            table.add(records[i : i + batch_size])
+            table.add(records[i : i + batch_size], mode=mode)
     else:
-        table.add(records)
+        table.add(records, mode=mode)
 
 
 async def batch_insert_async(
     table: AsyncTable,
-    records: list[TableAnnotation] | TableAnnotation,
+    records: list[T] | T,
+    *,
     batch_size: int = 1000,
+    mode: Literal["overwrite", "append"] = "append",
 ):
     """Asynchronously insert records into a LanceDB table."""
     if isinstance(records, list):
         for i in range(0, len(records), batch_size):
-            await table.add(records[i : i + batch_size])
+            await table.add(records[i : i + batch_size], mode=mode)
     else:
-        await table.add(records)
+        await table.add(records, mode=mode)
+
 
 def open_or_create_table(
-    db: DBConnection, table_name: str
+    db: DBConnection, table_name: str, schema: type[LanceModel] | None = None
 ) -> Table:
     """Open an existing LanceDB table or create a new one if it doesn't exist."""
     if table_name in db.table_names():
-        table = db.open_table(table_name)
-    else:
-        table = db.create_table(table_name, schema=TableAnnotation)
-    return table
+        return db.open_table(table_name)
+
+    if schema is None:
+        raise ValueError(f"Table '{table_name}' does not exist and no schema provided")
+
+    try:
+        return db.create_table(table_name, schema=schema)
+    except ValueError as e:
+        if "already exists" in str(e):
+            return db.open_table(table_name)
+        raise
+
+
+async def open_or_create_table_async(
+    db: AsyncConnection, table_name: str, schema: type[LanceModel] | None = None
+) -> AsyncTable:
+    """Asynchronously open an existing LanceDB table or create a new one if it doesn't exist."""
+    table_names = await db.table_names()
+    if table_name in table_names:
+        return await db.open_table(table_name)
+
+    if schema is None:
+        raise ValueError(f"Table '{table_name}' does not exist and no schema provided")
+
+    return await db.create_table(table_name, schema=schema)

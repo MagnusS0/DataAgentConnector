@@ -4,6 +4,7 @@ from functools import lru_cache
 
 from app.db.lance_db import get_lance_db, open_or_create_table
 from app.services.annotate.table_annotation import annotate_database, save_to_lance_db
+from app.models.lance_schemas import TableAnnotation
 from app.core.logging import get_logger
 from app.core.config import get_settings
 
@@ -30,6 +31,9 @@ async def store_table_descriptions() -> None:
     if not database_names:
         logger.info("No databases configured, skipping annotation store.")
         return
+
+    db = get_lance_db()
+    open_or_create_table(db, "table_annotations", TableAnnotation)
 
     save_tasks: list[asyncio.Task[None]] = []
     for database in database_names:
@@ -58,7 +62,7 @@ def get_table_descriptions(database: str, tables: tuple[str]) -> list[TableDescr
     If no descriptions exist, return None for each table.
     """
     db = get_lance_db()
-    table_annotations = open_or_create_table(db, "table_annotations")
+    table_annotations = open_or_create_table(db, "table_annotations", TableAnnotation)
 
     result = (
         table_annotations.search()

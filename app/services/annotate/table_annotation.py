@@ -1,8 +1,5 @@
 from hashlib import sha256
 import asyncio
-from collections.abc import Sequence
-
-from sqlalchemy.engine import RowMapping
 
 from app.agents.annotation_agents import table_annotation_agent
 from app.db.sql_alchemy import (
@@ -13,11 +10,14 @@ from app.db.sql_alchemy import (
 )
 from app.models.database_registry import TableMetadata
 from app.models.agents import TableDescription
-from app.db.lance_db import TableAnnotation, get_lance_db_async, batch_insert_async
-from app.services.annotate.embed import get_embedding_model, generate_embeddings
+from app.db.lance_db import get_lance_db_async, batch_insert_async
+from app.models.lance_schemas import TableAnnotation
+from app.services.indexing.embed import get_embedding_model, generate_embeddings
 from app.core.config import get_settings
+from app.core.logging import get_logger
 
 settings = get_settings()
+logger = get_logger(__name__)
 
 
 async def annotate_table(
@@ -28,15 +28,28 @@ async def annotate_table(
         metadata = get_table_metadata(conn, table_name)
         preview = get_table_preview(conn, table_name, limit=5)
 
+    column_distinct = await _get_distinct_column_values(database, table_name, limit=10)
+
+    logger.debug("Annotating table '%s' in database '%s'.", table_name, database)
+
     if lance:
         exists, schema_hash = await _check_existing_annotation(
             database, table_name, metadata
         )
         if exists:
+            logger.debug(
+                "Annotation for table '%s' in database '%s' is up-to-date, skipping.",
+                table_name,
+                database,
+            )
             return None
         else:
             table_description = await _get_description_from_agent(
-                database, table_name, metadata, preview
+                database,
+                table_name,
+                metadata,
+                [dict(row) for row in preview],
+                column_distinct,
             )
 
         annotation = TableAnnotation(
@@ -51,7 +64,11 @@ async def annotate_table(
 
     else:
         table_description = await _get_description_from_agent(
-            database, table_name, metadata, preview
+            database,
+            table_name,
+            metadata,
+            [dict(row) for row in preview],
+            column_distinct,
         )
 
         return TableAnnotation(
@@ -70,6 +87,8 @@ async def annotate_database(
     """Annotate all tables in a given database."""
     with connection_scope(database) as conn:
         tables = list_tables(conn)
+
+    logger.info("Annotating %d tables in database '%s'.", len(tables), database)
 
     annotations: list[TableAnnotation] = []
     tasks = []
@@ -117,10 +136,11 @@ async def _get_description_from_agent(
     database: str,
     table_name: str,
     metadata: TableMetadata,
-    preview: Sequence[RowMapping],
+    preview: list[dict],
+    column_distinct: list[str],
 ) -> str:
     """Use the annotation agent to generate a table description."""
-    table_description = await table_annotation_agent.run(
+    prompt = (
         f"""
         For the table named '{table_name}' in the database '{database}',
         generate a concise description based on the following metadata and data preview.
@@ -128,10 +148,19 @@ async def _get_description_from_agent(
         {metadata.model_dump()}
         </metadata>
         <preview>
-        {[dict(row) for row in preview]}
+        {preview}
         </preview>
+        The following are samples of distinct values from the tables non-numeric columns:
+        <distinct_values>
+        {column_distinct}
+        </distinct_values>
         """
+    ).strip()
+    logger.debug(
+        "Prompt for table '%s' in database '%s': %s", table_name, database, prompt
     )
+    table_description = await table_annotation_agent.run(prompt)
+
     output = table_description.output
     if not isinstance(output, TableDescription):
         raise RuntimeError("Annotation agent did not return a TableDescription.")
@@ -151,3 +180,35 @@ async def _check_existing_annotation(
         await table.query().where(f"schema_hash == '{schema_hash}'").limit(1).to_list()
     )
     return (len(existing) > 0, schema_hash)
+
+
+async def _get_distinct_column_values(
+    database: str,
+    table_name: str,
+    limit: int = 10,
+) -> list[str]:
+    """Get distinct values from lanceDB ColumnContent table for a specific table."""
+    lance_db = await get_lance_db_async()
+
+    # Fail gracefully if the table does not exist
+    try:
+        table = await lance_db.open_table(f"column_contents_{database}")
+    except ValueError:
+        logger.warning("Table 'column_contents_%s' does not exist.", database)
+        return []
+
+    results = (
+        await table.query()
+        .where(f"table_name = '{table_name}'")
+        .select(["column_name", "content", "num_distinct"])
+        .to_list()
+    )
+
+    column_values = [
+        f"Column: {row['column_name']}\n"
+        f"Sample values (showing {min(limit, row['num_distinct'])} of {row['num_distinct']}): "
+        f"{row['content'][:limit]}"
+        for row in results
+    ]
+
+    return column_values
