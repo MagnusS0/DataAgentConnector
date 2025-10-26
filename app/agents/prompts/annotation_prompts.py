@@ -11,6 +11,7 @@ Your summary should include:
 1. A brief description of the table's purpose based on its name and columns.
 2. An analysis of what the table can be used for in data analysis or reporting.
 3. Any notable columns that stand out (e.g., primary keys, foreign keys, unique indexes, views).
+4. Connections you can infer from the distinct values in the columns. (e.g., Low quality refers to the product's quality class, therefore Class = 'L' likely refers to Low quality products.)
 </Instructions>
 
 <Output Format>
