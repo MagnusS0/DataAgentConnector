@@ -153,7 +153,7 @@ def query_database(
     Only SELECT queries are allowed.
     """
     with connection_scope(database) as connection:
-        rows = execute_select(connection, query, limit=settings.limit)
+        rows = execute_select(connection, query, limit=settings.mcp_query_limit)
         return [dict(row) for row in rows]
 
 
