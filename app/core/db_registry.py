@@ -1,15 +1,7 @@
 from pathlib import Path
 
-from pydantic import BaseModel, Field
-
-
-class DatabaseConfig(BaseModel):
-    """Describes a single database connection."""
-
-    url: str = Field(description="SQLAlchemy-compatible connection string.")
-    description: str = Field(
-        default="", description="Short description of the dataset/schema."
-    )
+from pydantic import BaseModel
+from app.schemas.config import DatabaseConfig
 
 
 class DatabaseRegistry(BaseModel):

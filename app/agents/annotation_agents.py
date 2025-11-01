@@ -2,7 +2,7 @@ from pydantic_ai import Agent, ModelSettings
 
 from app.core.config import get_settings
 from app.agents.config import get_llm_model
-from app.models.agents import TableDescription, DatabaseDescription
+from app.schemas.agents import TableDescription, DatabaseDescription
 from app.agents.prompts.annotation_prompts import (
     PROMPT_TABLE_ANNOTATION_AGENT,
     PROMPT_DATABASE_ANNOTATION_AGENT,

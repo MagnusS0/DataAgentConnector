@@ -17,11 +17,11 @@ from sqlalchemy.sql.sqltypes import (
     Date,
 )
 
-from app.db.sql_alchemy import connection_scope, get_inspector
-from app.models.lance_schemas import ColumnContent
+from app.repositories.sql_db import connection_scope, get_inspector
+from app.models.lance import ColumnContent
 from app.core.logging import get_logger
 from app.core.config import get_settings
-from app.models.indexing import ExtractionOptions
+from app.schemas.config import ExtractionOptions
 
 logger = get_logger(__name__)
 

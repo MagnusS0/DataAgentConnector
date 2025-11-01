@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from app.interfaces.api.routes.widget_registry import WIDGETS, register_widget
-from app.db.sql_alchemy import connection_scope, execute_select
+from app.repositories.sql_db import connection_scope, execute_select
 
 router = APIRouter()
 

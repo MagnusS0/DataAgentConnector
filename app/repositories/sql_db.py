@@ -7,7 +7,7 @@ from sqlalchemy.engine import Connection, Engine, Inspector, RowMapping
 from sqlalchemy.exc import NoSuchTableError, ProgrammingError, StatementError
 
 from app.core.config import get_settings
-from app.models.database_registry import DatabaseRegistry, DatabaseConfig, TableMetadata
+from app.core.db_registry import DatabaseRegistry, DatabaseConfig, TableMetadata
 
 
 def get_registry() -> DatabaseRegistry:
@@ -123,7 +123,7 @@ def get_table_preview(
     ]
 
 
-def get_veiw_definition(conn: Connection, view_name: str) -> str:
+def get_view_definition(conn: Connection, view_name: str) -> str:
     inspector = get_inspector(conn)
     try:
         view_definition = inspector.get_view_definition(view_name)

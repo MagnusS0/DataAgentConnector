@@ -4,23 +4,21 @@ from fastmcp import FastMCP
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 
-from app.db.sql_alchemy import (
+from app.repositories.sql_db import (
     connection_scope,
     execute_select,
     get_table_metadata,
     get_table_preview,
-    get_veiw_definition,
+    get_view_definition,
     get_distinct_column_values,
     list_databases,
     list_tables,
     list_views,
 )
-from app.services.fk_analyzer import connect_tables, shortest_join_path
-from app.services.annotate.annotation_store import (
-    get_table_descriptions,
-    TableDescription,
-)
-from app.services.indexing.search import search_column_contents
+from app.repositories.fk_metadata import get_fk_info
+from app.domain.fk_analyzer import connect_tables, shortest_join_path
+from app.services.annotation_service import get_table_descriptions, TableDescription
+from app.services.search_service import SearchService
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -73,7 +71,7 @@ def describe_view(
     Get the SQL definition of a specific view.
     """
     with connection_scope(database) as connection:
-        return get_veiw_definition(connection, view_name)
+        return get_view_definition(connection, view_name)
 
 
 @mcp.tool
@@ -125,7 +123,10 @@ def find_relevant_columns_and_content(
 
     Returns the top_k most relevant contents including table, and column information.
     """
-    return search_column_contents(database=database, query=query, top_k=top_k)
+    search_service = SearchService()
+    return search_service.search_column_contents(
+        database=database, query=query, top_k=top_k
+    )
 
 
 @mcp.tool
@@ -176,12 +177,12 @@ def join_path(
     if len(tables) == 2:
         left, right = tables
         try:
-            steps = shortest_join_path(database, left, right)
+            steps = shortest_join_path(get_fk_info(database), left, right)
         except ValueError as e:
             return str(e)
     else:
         try:
-            steps = connect_tables(database, tables)
+            steps = connect_tables(get_fk_info(database), tables)
         except ValueError as e:
             return str(e)
 

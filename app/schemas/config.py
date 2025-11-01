@@ -14,3 +14,12 @@ class ExtractionOptions(BaseModel):
         if self.min_length > self.max_length:
             raise ValueError("min_length must be <= max_length")
         return self
+
+
+class DatabaseConfig(BaseModel):
+    """Describes a single database connection."""
+
+    url: str = Field(description="SQLAlchemy-compatible connection string.")
+    description: str = Field(
+        default="", description="Short description of the dataset/schema."
+    )

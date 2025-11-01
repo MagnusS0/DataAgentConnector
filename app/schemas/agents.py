@@ -10,6 +10,9 @@ class BaseDescription(BaseModel):
     @field_validator("description")
     @classmethod
     def check_word_count(cls, v, info):
+        """
+        Validates that the description does not exceed the maximum allowed word count.
+        """
         words = v.split()
         max_words = info.data.get("max_words", 100)
         if len(words) > max_words:

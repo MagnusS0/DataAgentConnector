@@ -8,8 +8,8 @@ from pydantic_settings.sources import (
     PyprojectTomlConfigSettingsSource,
 )
 
-from app.models.database_registry import DatabaseRegistry
-from app.models.indexing import ExtractionOptions
+from app.core.db_registry import DatabaseRegistry
+from app.schemas.config import ExtractionOptions
 
 
 class Settings(BaseSettings):
