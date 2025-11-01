@@ -74,6 +74,25 @@ environment variables) configures the LLM provider.
    uv run uvicorn app.main:app --reload
    ```
 
+## Project Structure
+
+```
+DataAgentConnector/
+├── app/
+│   ├── agents/
+│   ├── core/
+│   ├── domain/
+│   ├── interfaces/
+│   ├── models/
+│   ├── schemas/
+│   ├── repositories/
+│   ├── services/
+│   └── main.py
+├── databases.toml
+├── pyproject.toml
+├── .env
+└── README.md
+```
 
 
 ## Indexing & Metadata Pipeline
