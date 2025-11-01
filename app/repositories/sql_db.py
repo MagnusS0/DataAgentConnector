@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from functools import cache
@@ -9,11 +7,7 @@ from sqlalchemy.engine import Connection, Engine, Inspector, RowMapping
 from sqlalchemy.exc import NoSuchTableError, ProgrammingError, StatementError
 
 from app.core.config import get_settings
-from app.models.database_registry import (
-    DatabaseRegistry, 
-    DatabaseConfig,
-    TableMetadata
-)
+from app.core.db_registry import DatabaseRegistry, DatabaseConfig, TableMetadata
 
 
 def get_registry() -> DatabaseRegistry:
@@ -66,6 +60,10 @@ def list_tables(conn: Connection) -> list[str]:
     return get_inspector(conn).get_table_names()
 
 
+def list_views(conn: Connection) -> list[str]:
+    return get_inspector(conn).get_view_names()
+
+
 def get_table_metadata(conn: Connection, table_name: str) -> TableMetadata:
     inspector = get_inspector(conn)
     if not inspector.has_table(table_name):
@@ -82,8 +80,8 @@ def get_table_metadata(conn: Connection, table_name: str) -> TableMetadata:
 
 
 def get_table_preview(
-    conn: Connection, table_name: str, limit: int = 5
-) -> Sequence[RowMapping]:
+    conn: Connection, table_name: str, limit: int = 5, max_field_length: int = 150
+) -> list[dict]:
     """Get a preview of table data"""
     inspector = get_inspector(conn)
     try:
@@ -94,14 +92,63 @@ def get_table_preview(
     if not columns:
         return []
 
-    tbl = table(table_name, *[column(col["name"]) for col in columns])
+    skip_types = {
+        "BLOB",
+        "BINARY",
+        "VARBINARY",
+        "BYTEA",
+        "RAW",
+        "LONGVARBINARY",
+        "IMAGE",
+    }
+    preview_columns = [
+        col for col in columns if str(col["type"]).upper() not in skip_types
+    ]
+
+    if not preview_columns:
+        return []
+
+    tbl = table(table_name, *[column(col["name"]) for col in preview_columns])
 
     stmt = select(tbl).limit(limit)
     try:
         result = conn.execute(stmt)
     except ProgrammingError as exc:
         raise ValueError(f'Failed to preview table "{table_name}": {exc.orig}') from exc
-    return result.mappings().all()
+    rows = result.mappings().all()
+
+    return [
+        {key: _truncate_value(value, max_field_length) for key, value in row.items()}
+        for row in rows
+    ]
+
+
+def get_view_definition(conn: Connection, view_name: str) -> str:
+    inspector = get_inspector(conn)
+    try:
+        view_definition = inspector.get_view_definition(view_name)
+    except NoSuchTableError as exc:
+        raise ValueError(f'View "{view_name}" does not exist.') from exc
+    if view_definition is None:
+        raise ValueError(f'View definition for "{view_name}" could not be retrieved.')
+    return view_definition
+
+
+def get_distinct_column_values(
+    conn: Connection, table_name: str, column_name: str, limit: int = 500
+) -> list[str]:
+    """Get distinct non-null values from a specified column up to a limit."""
+    tbl = table(table_name, column(column_name))
+    col = tbl.c[column_name]
+    stmt = select(col).where(col.is_not(None)).distinct().limit(limit)
+    try:
+        result = conn.execute(stmt)
+    except ProgrammingError as exc:
+        raise ValueError(
+            f'Failed to get column details for "{table_name}.{column_name}": {exc.orig}'
+        ) from exc
+
+    return list(result.scalars())
 
 
 def get_fk_graph(conn: Connection):
@@ -109,10 +156,22 @@ def get_fk_graph(conn: Connection):
     return inspector.get_sorted_table_and_fkc_names()
 
 
-def execute_select(conn: Connection, query: str) -> Sequence[RowMapping]:
+def execute_select(
+    conn: Connection, query: str, limit: int | None = None
+) -> Sequence[RowMapping]:
     result = conn.execute(text(query))
-    return result.mappings().all()
+    mappings = result.mappings()
+    if limit is not None:
+        return mappings.fetchmany(limit)
+    return mappings.all()
 
 
 def list_databases() -> list[dict[str, str]]:
     return get_registry().summary()
+
+
+def _truncate_value(value, max_length: int = 150):
+    """Truncate string values that exceed max_length."""
+    if isinstance(value, str) and len(value) > max_length:
+        return value[:max_length] + "..."
+    return value

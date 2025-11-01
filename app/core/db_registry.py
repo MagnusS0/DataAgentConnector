@@ -1,17 +1,7 @@
-from __future__ import annotations
-
 from pathlib import Path
 
-from pydantic import BaseModel, Field
-
-
-class DatabaseConfig(BaseModel):
-    """Describes a single database connection."""
-
-    url: str = Field(description="SQLAlchemy-compatible connection string.")
-    description: str = Field(
-        default="", description="Short description of the dataset/schema."
-    )
+from pydantic import BaseModel
+from app.schemas.config import DatabaseConfig
 
 
 class DatabaseRegistry(BaseModel):
@@ -70,3 +60,42 @@ class TableMetadata(BaseModel):
             foreign_keys=foreign_keys,
             indexes=indexes,
         )
+
+    def to_create_table(self, table_name: str, include_indexes: bool = True) -> str:
+        """Generate CREATE TABLE statement representation for LLM consumption.
+
+        Args:
+            table_name: Name of the table
+            include_indexes: If True, append CREATE INDEX statements after the table
+        """
+        column_defs = [
+            f"  {col['name']} {col.get('type', 'UNKNOWN')}"
+            + ("" if col.get("nullable", True) else " NOT NULL")
+            for col in self.columns
+        ]
+
+        # PK constraint
+        if pk_cols := self.primary_keys.get("constrained_columns", []):
+            column_defs.append(f"  PRIMARY KEY ({', '.join(pk_cols)})")
+
+        # FK constraints
+        column_defs.extend(
+            f"  FOREIGN KEY ({', '.join(fk['constrained_columns'])}) "
+            f"REFERENCES {fk['referred_table']}({', '.join(fk['referred_columns'])})"
+            for fk in self.foreign_keys
+            if fk.get("constrained_columns")
+            and fk.get("referred_table")
+            and fk.get("referred_columns")
+        )
+
+        parts = [f"CREATE TABLE {table_name} (", ",\n".join(column_defs), ");"]
+
+        if include_indexes and self.indexes:
+            parts.extend(
+                f"\nCREATE {'UNIQUE ' if idx.get('unique') else ''}INDEX {idx['name']} "
+                f"ON {table_name} ({', '.join(idx['column_names'])});"
+                for idx in self.indexes
+                if idx.get("column_names")
+            )
+
+        return "\n".join(parts)

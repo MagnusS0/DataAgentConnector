@@ -1,33 +1,74 @@
 [project]
-name = "data-agent-stack"
+name = "data-agent-connector"
 version = "0.1.0"
-description = "A blue print for building data agents that can connect to any SQL database."
+description = "A connector for Data Agents to interface with various databases through MCP"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "lancedb>=0.25.1",
+    "lancedb>=0.25.2",
     "pydantic>=2.11.10",
     "pydantic-settings>=2.11.0",
     "pyodbc>=5.2.0",
+    "orjson>=3.10.7",
     "rich>=14.1.0",
     "scipy>=1.16.2",
-    "sqlalchemy>=2.0.43",
+    "sqlalchemy>=2.0.44",
+    "async-lru>=2.0.5",
+    "fastmcp>=2.12.4",
+    "fastapi[standard]>=0.118.0",
 ]
 
 [dependency-groups]
 ai = [
     "pydantic-ai-slim[openai]>=1.0.17",
     "sentence-transformers>=5.1.1",
-    "vllm>=0.11.0",
 ]
 dev = [
     "pre-commit>=4.3.0",
     "ruff>=0.13.3",
     "ty>=0.0.1a21",
 ]
-mcp = [
-    "fastmcp>=2.12.4",
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", marker = "sys_platform != 'linux'" },
+  { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
 ]
-rest = [
-    "fastapi[standard]>=0.118.0",
+torchvision = [
+  { index = "pytorch-cpu", marker = "sys_platform != 'linux'" },
+  { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.dac.settings]
+databases_file = "databases.toml"
+
+log_level = "INFO"
+log_folder = "logs"
+
+mcp_query_limit = 25
+
+annotate_on_startup = true
+max_concurrent_annotations = 32
+
+lance_db_path = "./data/lance_db"
+n_dims = 768
+embedding_model_name = "google/embeddinggemma-300m"
+device = "cuda"
+
+allowed_sql_commands = ["SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "WITH", "PRAGMA"]
+
+[tool.dac.settings.fts_extraction_options]
+max_workers = 8
+max_values_per_column = 1000
+min_length = 2
+max_length = 40

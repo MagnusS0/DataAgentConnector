@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
+from typing import Iterable, Protocol
 from functools import lru_cache
-from typing import Iterable
 
 import numpy as np
 from scipy.sparse import coo_matrix, csr_matrix, csr_array
@@ -13,9 +11,22 @@ from scipy.sparse.csgraph import (
 )
 
 from app.core.logging import get_logger
-from app.db.sql_alchemy import connection_scope, get_inspector
 
-logger = get_logger("services.fk_analyzer")
+logger = get_logger("domain.fk_analyzer")
+
+
+class ForeignKeyInfo(Protocol):
+    """Protocol for foreign key metadata."""
+
+    def get_table_names(self) -> list[str]:
+        """Return all table names in the database."""
+        ...
+
+    def get_foreign_keys(self, table_name: str) -> list[dict]:
+        """Return foreign key constraints for a table."""
+        ...
+
+    def __hash__(self) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -44,10 +55,9 @@ class FKSnapshot:
 
 
 @lru_cache(maxsize=16)
-def _build_snapshot(database: str) -> FKSnapshot:
+def _build_snapshot(fk_info: ForeignKeyInfo) -> FKSnapshot:
     """
-    Build a snapshot of the foreign key graph for the given database.
-    Caches up to 16 databases.
+    Build a snapshot of the foreign key graph from FK metadata.
 
     Constructs:
         - CSR adjacency matrix A ∈ {0,1}^{n*n}
@@ -55,73 +65,70 @@ def _build_snapshot(database: str) -> FKSnapshot:
         - Connected components using `connected_components(A)`.
         - Edge constraints registry: for each {a,b}, all FK constraints.
     """
+    tables = list(fk_info.get_table_names())
 
-    with connection_scope(database) as conn:
-        insp = get_inspector(conn)
-        tables = list(insp.get_table_names())
+    name_to_idx = {t: i for i, t in enumerate(tables)}
+    idx_to_name = tables[:]
 
-        name_to_idx = {t: i for i, t in enumerate(tables)}
-        idx_to_name = tables[:]
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[int] = []
+    edge_constraints: dict[frozenset[str], list[ForeignKeyConstraint]] = {}
 
-        rows: list[int] = []
-        cols: list[int] = []
-        data: list[int] = []
-        edge_constraints: dict[frozenset[str], list[ForeignKeyConstraint]] = {}
+    missing_refs: set[tuple[str, str]] = set()
 
-        missing_refs: set[tuple[str, str]] = set()
+    for t in tables:
+        for fk in fk_info.get_foreign_keys(t) or ():
+            ref = fk.get("referred_table")
+            cons = tuple(fk.get("constrained_columns") or ())
+            refs = tuple(fk.get("referred_columns") or ())
+            if not ref or not cons:
+                continue
 
-        for t in tables:
-            for fk in insp.get_foreign_keys(t) or ():
-                ref = fk.get("referred_table")
-                cons = tuple(fk.get("constrained_columns") or ())
-                refs = tuple(fk.get("referred_columns") or ())
-                if not ref or not cons:
-                    continue
+            if ref not in name_to_idx:
+                # skip dangling FK targets
+                missing_refs.add((t, ref))
+                continue
 
-                if ref not in name_to_idx:
-                    # skip dangling FK targets
-                    missing_refs.add((t, ref))
-                    continue
-
-                c = ForeignKeyConstraint(
-                    name=fk.get("name"),
-                    from_table=t,
-                    to_table=ref,
-                    column_pairs=tuple(zip(cons, refs)),
-                )
-                edge_constraints.setdefault(frozenset({t, ref}), []).append(c)
-
-                # undirected unit edge for BFS/Dijkstra
-                ui, vi = name_to_idx[t], name_to_idx[ref]
-                rows.extend([ui, vi])
-                cols.extend([vi, ui])
-                data.extend([1, 1])
-
-        n = len(tables)
-        csr = coo_matrix((data, (rows, cols)), shape=(n, n)).tocsr()
-        _, comps = connected_components(csr, directed=False)
-
-        if missing_refs:
-            missing_pairs = ", ".join(
-                f"{src}->{dst}" for src, dst in sorted(missing_refs)
+            c = ForeignKeyConstraint(
+                name=fk.get("name"),
+                from_table=t,
+                to_table=ref,
+                column_pairs=tuple(zip(cons, refs)),
             )
-            logger.warning(
-                "Foreign key references unknown table(s) skipped: %s", missing_pairs
-            )
+            edge_constraints.setdefault(frozenset({t, ref}), []).append(c)
 
-        return FKSnapshot(csr, name_to_idx, idx_to_name, comps, edge_constraints)
+            # undirected unit edge for BFS/Dijkstra
+            ui, vi = name_to_idx[t], name_to_idx[ref]
+            rows.extend([ui, vi])
+            cols.extend([vi, ui])
+            data.extend([1, 1])
+
+    n = len(tables)
+    csr = coo_matrix((data, (rows, cols)), shape=(n, n)).tocsr()
+    _, comps = connected_components(csr, directed=False)
+
+    if missing_refs:
+        missing_pairs = ", ".join(f"{src}->{dst}" for src, dst in sorted(missing_refs))
+        logger.warning(
+            "Foreign key references unknown table(s) skipped: %s", missing_pairs
+        )
+
+    return FKSnapshot(csr, name_to_idx, idx_to_name, comps, edge_constraints)
 
 
 def clear_cache() -> None:
-    """Clear the snapshot cache."""
+    """Clear cached FK snapshots."""
     _build_snapshot.cache_clear()
 
 
-def shortest_join_path(database: str, left: str, right: str) -> list[JoinStep]:
+def shortest_join_path(
+    fk_info: ForeignKeyInfo, left: str, right: str
+) -> list[JoinStep]:
     """Return the shortest join path between two tables.
 
     Args:
-        database: The name of the database to query.
+        fk_info: Provider of table names and foreign key metadata.
         left: The starting table name.
         right: The ending table name.
 
@@ -131,7 +138,7 @@ def shortest_join_path(database: str, left: str, right: str) -> list[JoinStep]:
     Raises:
         ValueError: If no path exists or if tables are unknown.
     """
-    fk_graph = _build_snapshot(database)
+    fk_graph = _build_snapshot(fk_info)
     _ensure_known(fk_graph, (left, right))
     source_index, target_index = fk_graph.name_to_idx[left], fk_graph.name_to_idx[right]
     if fk_graph.components[source_index] != fk_graph.components[target_index]:
@@ -151,14 +158,14 @@ def shortest_join_path(database: str, left: str, right: str) -> list[JoinStep]:
     return _steps_from_path(fk_graph, path)
 
 
-def connect_tables(database: str, tables: Iterable[str]) -> list[JoinStep]:
+def connect_tables(fk_info: ForeignKeyInfo, tables: Iterable[str]) -> list[JoinStep]:
     """Return a minimal join network connecting all given tables.
 
     This method computes an approximate Steiner tree to find the minimal
     set of joins needed to connect all tables in the `tables` argument.
 
     Args:
-        database: The name of the database to query.
+        fk_info: Provider of table names and foreign key metadata.
         tables: An iterable of table names to connect.
 
     Returns:
@@ -170,7 +177,7 @@ def connect_tables(database: str, tables: Iterable[str]) -> list[JoinStep]:
     requested = list(dict.fromkeys(tables))
     if len(requested) < 2:
         raise ValueError("Provide at least two tables.")
-    fk_graph = _build_snapshot(database)
+    fk_graph = _build_snapshot(fk_info)
     _ensure_known(fk_graph, requested)
 
     term_idx = [fk_graph.name_to_idx[t] for t in requested]
