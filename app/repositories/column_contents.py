@@ -5,7 +5,6 @@ from app.repositories.lance_db import (
     get_lance_db_async,
     get_lance_db,
     batch_insert_async,
-    open_or_create_table,
     open_or_create_table_async,
 )
 
@@ -20,14 +19,32 @@ class ColumnContentRepository:
     def search_fts(self, query: str, top_k: int = 5) -> list[dict]:
         """Full-text search on column contents (sync version for simple queries)."""
         db = get_lance_db()
-        table = open_or_create_table(db, self.table_name, schema=ColumnContent)
 
-        results = (
-            table.search(query, query_type="fts", fts_columns=["content"])
-            .select(["table_name", "column_name", "content", "num_distinct", "_score"])
-            .limit(top_k)
-            .to_list()
-        )
+        # Check if table exists before opening
+        if self.table_name not in db.table_names():
+            raise ValueError(
+                f"Column contents for database '{self.database}' have not been indexed. "
+                f"Please run indexing first."
+            )
+
+        table = db.open_table(self.table_name)
+
+        try:
+            results = (
+                table.search(query, query_type="fts", fts_columns=["content"])
+                .select(
+                    ["table_name", "column_name", "content", "num_distinct", "_score"]
+                )
+                .limit(top_k)
+                .to_list()
+            )
+        except Exception as e:
+            if "no inverted index" in str(e).lower():
+                raise ValueError(
+                    f"FTS index for database '{self.database}' is incomplete. "
+                    f"Please re-run indexing."
+                ) from e
+            raise
 
         return results
 
