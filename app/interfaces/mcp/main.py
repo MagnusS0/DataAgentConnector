@@ -15,7 +15,6 @@ from app.db.sql_alchemy import (
     list_tables,
     list_views,
 )
-from app.models.database_registry import TableMetadata
 from app.services.fk_analyzer import connect_tables, shortest_join_path
 from app.services.annotate.annotation_store import (
     get_table_descriptions,
@@ -81,14 +80,15 @@ def describe_view(
 def describe_table(
     table_name: Annotated[str, "Name of the table to describe"],
     database: Annotated[str, "Name of the database to use"],
-) -> TableMetadata:
+) -> str:
     """
     Get metadata for a specific table.
     Use this to understand the structure of the table and what columns it contains.
     Includes columns, primary keys, foreign keys, and indexes.
     """
     with connection_scope(database) as connection:
-        return get_table_metadata(connection, table_name)
+        table = get_table_metadata(connection, table_name).to_create_table(table_name)
+        return table
 
 
 @mcp.tool
