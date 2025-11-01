@@ -4,8 +4,8 @@ import timeit
 from fastapi import FastAPI
 
 from app.core.logging import get_logger
-from app.presentation.api.main import create_app as create_api_app
-from app.presentation.mcp.main import create_mcp_app
+from app.interfaces.api.main import create_app as create_api_app
+from app.interfaces.mcp.main import create_mcp_app
 from app.services.annotate.annotation_store import store_table_descriptions
 from app.services.indexing.content_fts_indexer import create_all_content_indices
 
