@@ -82,18 +82,31 @@ async def annotate_table(
 
 
 async def annotate_database(
-    database: str, lance: bool = False
+    database: str, lance: bool = False, max_concurrent: int | None = None
 ) -> list[TableAnnotation]:
-    """Annotate all tables in a given database."""
+    """Annotate all tables in a given database with controlled concurrency."""
     with connection_scope(database) as conn:
         tables = list_tables(conn)
 
     logger.info("Annotating %d tables in database '%s'.", len(tables), database)
 
+    # Prevent "too many open files"
+    if max_concurrent is None:
+        max_concurrent = settings.max_concurrent_annotations
+
+    logger.debug(
+        "Using max_concurrent_annotations=%d for database '%s'",
+        max_concurrent,
+        database,
+    )
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def annotate_with_limit(table_name: str) -> TableAnnotation | None:
+        async with semaphore:
+            return await annotate_table(database, table_name, lance=lance)
+
     annotations: list[TableAnnotation] = []
-    tasks = []
-    for table_name in tables:
-        tasks.append(annotate_table(database, table_name, lance=lance))
+    tasks = [annotate_with_limit(table_name) for table_name in tables]
 
     results = await asyncio.gather(*tasks)
     for result in results:
@@ -145,7 +158,7 @@ async def _get_description_from_agent(
         For the table named '{table_name}' in the database '{database}',
         generate a concise description based on the following metadata and data preview.
         <metadata>
-        {metadata.model_dump()}
+        {metadata.to_create_table(table_name=table_name)}
         </metadata>
         <preview>
         {preview}
