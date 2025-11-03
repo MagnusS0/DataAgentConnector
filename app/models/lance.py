@@ -26,9 +26,7 @@ class TableAnnotation(LanceModel):
         if v:
             return v
         data = info.data
-        hash_input = (
-            f"{data['database_name']}.{data['table_name']}.{data['metadata_json']}"
-        )
+        hash_input = f"{data['database_name']}.{data['schema_name']}.{data['table_name']}.{data['metadata_json']}"
         return sha256(hash_input.encode("utf-8")).hexdigest()
 
 
@@ -37,6 +35,7 @@ class ColumnContent(LanceModel):
 
     id_hash: str | None = None
     database_name: str
+    schema_name: str
     table_name: str
     column_name: str
     content: list[str]
@@ -51,6 +50,7 @@ class ColumnContent(LanceModel):
         data = info.data
         hash_input = (
             f"{data['database_name']}."
+            f"{data['schema_name']}."
             f"{data['table_name']}."
             f"{data['column_name']}."
             f"{data['content']}"

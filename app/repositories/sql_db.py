@@ -193,7 +193,7 @@ def list_databases() -> list[dict[str, str | list[str]]]:
     dbs = [
         {
             **db,
-            "schemas": _list_schemas_for(db["name"]),
+            "schemas": list_schemas_for(db["name"]),
         }
         for db in dbs
     ]
@@ -208,6 +208,6 @@ def _truncate_value(value, max_length: int = 150):
 
 
 @ttl_cache(ttl=300)
-def _list_schemas_for(database: str) -> list[str]:
+def list_schemas_for(database: str) -> list[str]:
     with connection_scope(database) as connection:
         return list_schemas(connection)

@@ -126,6 +126,7 @@ def get_distinct_values(
 def find_relevant_columns_and_content(
     query: Annotated[str, "The search query to find relevant columns for"],
     database: Annotated[str, "Name of the database to use"],
+    schema: Annotated[str | None, "Optional name of the schema to use"] = None,
     top_k: Annotated[int, "Number of top relevant contents to return"] = 5,
 ) -> list[str]:
     """
@@ -138,7 +139,7 @@ def find_relevant_columns_and_content(
     """
     search_service = SearchService()
     return search_service.search_column_contents(
-        database=database, query=query, top_k=top_k
+        database=database, query=query, schema=schema, top_k=top_k
     )
 
 
