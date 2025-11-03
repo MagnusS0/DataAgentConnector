@@ -56,8 +56,10 @@ def connection_scope(
 def get_inspector(conn: Connection) -> Inspector:
     return inspect(conn)
 
+
 def list_schemas(conn: Connection) -> list[str]:
     return get_inspector(conn).get_schema_names()
+
 
 def list_tables(conn: Connection, schema: str | None = None) -> list[str]:
     return get_inspector(conn).get_table_names(schema=schema)
@@ -67,7 +69,9 @@ def list_views(conn: Connection, schema: str | None = None) -> list[str]:
     return get_inspector(conn).get_view_names(schema=schema)
 
 
-def get_table_metadata(conn: Connection, table_name: str, schema: str | None = None) -> TableMetadata:
+def get_table_metadata(
+    conn: Connection, table_name: str, schema: str | None = None
+) -> TableMetadata:
     inspector = get_inspector(conn)
     if not inspector.has_table(table_name, schema=schema):
         raise ValueError(f'Table "{table_name}" does not exist.')
@@ -83,7 +87,11 @@ def get_table_metadata(conn: Connection, table_name: str, schema: str | None = N
 
 
 def get_table_preview(
-    conn: Connection, table_name: str, schema: str | None = None, limit: int = 5, max_field_length: int = 150
+    conn: Connection,
+    table_name: str,
+    schema: str | None = None,
+    limit: int = 5,
+    max_field_length: int = 150,
 ) -> list[dict]:
     """Get a preview of table data"""
     inspector = get_inspector(conn)
@@ -111,7 +119,9 @@ def get_table_preview(
     if not preview_columns:
         return []
 
-    tbl = table(table_name, *[column(col["name"]) for col in preview_columns], schema=schema)
+    tbl = table(
+        table_name, *[column(col["name"]) for col in preview_columns], schema=schema
+    )
 
     stmt = select(tbl).limit(limit)
     try:
@@ -126,7 +136,9 @@ def get_table_preview(
     ]
 
 
-def get_view_definition(conn: Connection, view_name: str, schema: str | None = None) -> str:
+def get_view_definition(
+    conn: Connection, view_name: str, schema: str | None = None
+) -> str:
     inspector = get_inspector(conn)
     try:
         view_definition = inspector.get_view_definition(view_name, schema=schema)
@@ -138,7 +150,11 @@ def get_view_definition(conn: Connection, view_name: str, schema: str | None = N
 
 
 def get_distinct_column_values(
-    conn: Connection, table_name: str, column_name: str, schema: str | None = None, limit: int = 500
+    conn: Connection,
+    table_name: str,
+    column_name: str,
+    schema: str | None = None,
+    limit: int = 500,
 ) -> list[str]:
     """Get distinct non-null values from a specified column up to a limit."""
     tbl = table(table_name, column(column_name), schema=schema)
@@ -154,7 +170,9 @@ def get_distinct_column_values(
     return list(result.scalars())
 
 
-def get_fk_graph(conn: Connection, schema: str | None = None) -> list[tuple[str | None, list[tuple[str, str | None]]]]:
+def get_fk_graph(
+    conn: Connection, schema: str | None = None
+) -> list[tuple[str | None, list[tuple[str, str | None]]]]:
     inspector = get_inspector(conn)
     return inspector.get_sorted_table_and_fkc_names(schema=schema)
 
@@ -187,6 +205,7 @@ def _truncate_value(value, max_length: int = 150):
     if isinstance(value, str) and len(value) > max_length:
         return value[:max_length] + "..."
     return value
+
 
 @ttl_cache(ttl=300)
 def _list_schemas_for(database: str) -> list[str]:

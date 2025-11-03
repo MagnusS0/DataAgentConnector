@@ -46,7 +46,10 @@ def get_databases() -> list[dict[str, str | list[str]]]:
 
 
 @mcp.tool
-def show_tables(database: Annotated[str, "Name of the database to use"], schema: Annotated[str | None, "Optional name of the schema to use"] = None) -> list[TableDescription]:
+def show_tables(
+    database: Annotated[str, "Name of the database to use"],
+    schema: Annotated[str | None, "Optional name of the schema to use"] = None,
+) -> list[TableDescription]:
     """List tables in the connected database along with descriptions."""
     with connection_scope(database) as connection:
         tables = list_tables(connection, schema=schema)
@@ -57,7 +60,7 @@ def show_tables(database: Annotated[str, "Name of the database to use"], schema:
 @mcp.tool
 def show_views(
     database: Annotated[str, "Name of the database to use"],
-    schema: Annotated[str | None, "Optional name of the schema to use"] = None
+    schema: Annotated[str | None, "Optional name of the schema to use"] = None,
 ) -> list[str]:
     """List views in the connected database."""
     with connection_scope(database) as connection:
@@ -91,7 +94,9 @@ def describe_table(
     Includes columns, primary keys, foreign keys, and indexes.
     """
     with connection_scope(database) as connection:
-        table = get_table_metadata(connection, table_name, schema=schema).to_create_table(table_name)
+        table = get_table_metadata(
+            connection, table_name, schema=schema
+        ).to_create_table(table_name)
         return table
 
 
@@ -141,7 +146,7 @@ def find_relevant_columns_and_content(
 def preview_table(
     table_name: Annotated[str, "Name of the table to preview"],
     database: Annotated[str, "Name of the database to use"],
-    schema: Annotated[str | None, "Optional name of the schema to use"] = None
+    schema: Annotated[str | None, "Optional name of the schema to use"] = None,
 ) -> list[dict]:
     """
     Preview the first few rows of a specific table.
