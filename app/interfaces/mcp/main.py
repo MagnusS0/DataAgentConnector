@@ -35,9 +35,10 @@ Use the provided tools to interact with the database effectively.
 
 
 @mcp.tool
-def get_databases() -> list[dict[str, str]]:
+def get_databases() -> list[dict[str, str | list[str]]]:
     """
     Use this to get a list of available databases and their descriptions.
+    Each database entry includes its name and a list of schemas.
     This is usually the first tool to call. You use the 'name' field from the output
     to specify which database to connect to in other tools on this mcp server.
     """
@@ -45,19 +46,22 @@ def get_databases() -> list[dict[str, str]]:
 
 
 @mcp.tool
-def show_tables(database: str) -> list[TableDescription]:
+def show_tables(database: Annotated[str, "Name of the database to use"], schema: Annotated[str | None, "Optional name of the schema to use"] = None) -> list[TableDescription]:
     """List tables in the connected database along with descriptions."""
     with connection_scope(database) as connection:
-        tables = list_tables(connection)
+        tables = list_tables(connection, schema=schema)
 
     return get_table_descriptions(database, tuple(tables))
 
 
 @mcp.tool
-def show_views(database: str) -> list[str]:
+def show_views(
+    database: Annotated[str, "Name of the database to use"],
+    schema: Annotated[str | None, "Optional name of the schema to use"] = None
+) -> list[str]:
     """List views in the connected database."""
     with connection_scope(database) as connection:
-        views = list_views(connection)
+        views = list_views(connection, schema=schema)
 
     return views
 
@@ -66,18 +70,20 @@ def show_views(database: str) -> list[str]:
 def describe_view(
     view_name: Annotated[str, "Name of the view to describe"],
     database: Annotated[str, "Name of the database to use"],
+    schema: Annotated[str | None, "Optional name of the schema to use"] = None,
 ) -> str:
     """
     Get the SQL definition of a specific view.
     """
     with connection_scope(database) as connection:
-        return get_view_definition(connection, view_name)
+        return get_view_definition(connection, view_name, schema=schema)
 
 
 @mcp.tool
 def describe_table(
     table_name: Annotated[str, "Name of the table to describe"],
     database: Annotated[str, "Name of the database to use"],
+    schema: Annotated[str | None, "Optional name of the schema to use"] = None,
 ) -> str:
     """
     Get metadata for a specific table.
@@ -85,7 +91,7 @@ def describe_table(
     Includes columns, primary keys, foreign keys, and indexes.
     """
     with connection_scope(database) as connection:
-        table = get_table_metadata(connection, table_name).to_create_table(table_name)
+        table = get_table_metadata(connection, table_name, schema=schema).to_create_table(table_name)
         return table
 
 
@@ -94,6 +100,7 @@ def get_distinct_values(
     table_name: Annotated[str, "Name of the table to get distinct values from"],
     column_name: Annotated[str, "Name of the column to get distinct values from"],
     database: Annotated[str, "Name of the database to use"],
+    schema: Annotated[str | None, "Optional name of the schema to use"] = None,
     limit: Annotated[int, "Maximum number of distinct values to return"] = 25,
 ) -> list[str]:
     """
@@ -105,6 +112,7 @@ def get_distinct_values(
             conn=connection,
             table_name=table_name,
             column_name=column_name,
+            schema=schema,
             limit=limit,
         )
 
@@ -133,6 +141,7 @@ def find_relevant_columns_and_content(
 def preview_table(
     table_name: Annotated[str, "Name of the table to preview"],
     database: Annotated[str, "Name of the database to use"],
+    schema: Annotated[str | None, "Optional name of the schema to use"] = None
 ) -> list[dict]:
     """
     Preview the first few rows of a specific table.
@@ -140,7 +149,7 @@ def preview_table(
     Default to 5 rows.
     """
     with connection_scope(database) as connection:
-        rows = get_table_preview(connection, table_name)
+        rows = get_table_preview(connection, table_name, schema=schema)
         return rows
 
 
@@ -152,6 +161,7 @@ def query_database(
     """
     Execute a SQL SELECT query and return the results.
     Only SELECT queries are allowed.
+    Make sure to use the schema.table notation if not querying the default schema.
     """
     with connection_scope(database) as connection:
         rows = execute_select(connection, query, limit=settings.mcp_query_limit)

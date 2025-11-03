@@ -1,6 +1,7 @@
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from functools import cache
+from cachetools.func import ttl_cache
 
 from sqlalchemy import column, create_engine, event, inspect, select, table, text
 from sqlalchemy.engine import Connection, Engine, Inspector, RowMapping
@@ -55,24 +56,26 @@ def connection_scope(
 def get_inspector(conn: Connection) -> Inspector:
     return inspect(conn)
 
+def list_schemas(conn: Connection) -> list[str]:
+    return get_inspector(conn).get_schema_names()
 
-def list_tables(conn: Connection) -> list[str]:
-    return get_inspector(conn).get_table_names()
-
-
-def list_views(conn: Connection) -> list[str]:
-    return get_inspector(conn).get_view_names()
+def list_tables(conn: Connection, schema: str | None = None) -> list[str]:
+    return get_inspector(conn).get_table_names(schema=schema)
 
 
-def get_table_metadata(conn: Connection, table_name: str) -> TableMetadata:
+def list_views(conn: Connection, schema: str | None = None) -> list[str]:
+    return get_inspector(conn).get_view_names(schema=schema)
+
+
+def get_table_metadata(conn: Connection, table_name: str, schema: str | None = None) -> TableMetadata:
     inspector = get_inspector(conn)
-    if not inspector.has_table(table_name):
+    if not inspector.has_table(table_name, schema=schema):
         raise ValueError(f'Table "{table_name}" does not exist.')
     raw_metadata = {
-        "columns": inspector.get_columns(table_name),
-        "primary_keys": inspector.get_pk_constraint(table_name),
-        "foreign_keys": inspector.get_foreign_keys(table_name),
-        "indexes": inspector.get_indexes(table_name),
+        "columns": inspector.get_columns(table_name, schema=schema),
+        "primary_keys": inspector.get_pk_constraint(table_name, schema=schema),
+        "foreign_keys": inspector.get_foreign_keys(table_name, schema=schema),
+        "indexes": inspector.get_indexes(table_name, schema=schema),
     }
 
     metadata = TableMetadata.from_sqlalchemy(raw_metadata)
@@ -80,12 +83,12 @@ def get_table_metadata(conn: Connection, table_name: str) -> TableMetadata:
 
 
 def get_table_preview(
-    conn: Connection, table_name: str, limit: int = 5, max_field_length: int = 150
+    conn: Connection, table_name: str, schema: str | None = None, limit: int = 5, max_field_length: int = 150
 ) -> list[dict]:
     """Get a preview of table data"""
     inspector = get_inspector(conn)
     try:
-        columns = inspector.get_columns(table_name)
+        columns = inspector.get_columns(table_name, schema=schema)
     except NoSuchTableError as exc:
         raise ValueError(f'Table "{table_name}" does not exist.') from exc
 
@@ -108,7 +111,7 @@ def get_table_preview(
     if not preview_columns:
         return []
 
-    tbl = table(table_name, *[column(col["name"]) for col in preview_columns])
+    tbl = table(table_name, *[column(col["name"]) for col in preview_columns], schema=schema)
 
     stmt = select(tbl).limit(limit)
     try:
@@ -123,10 +126,10 @@ def get_table_preview(
     ]
 
 
-def get_view_definition(conn: Connection, view_name: str) -> str:
+def get_view_definition(conn: Connection, view_name: str, schema: str | None = None) -> str:
     inspector = get_inspector(conn)
     try:
-        view_definition = inspector.get_view_definition(view_name)
+        view_definition = inspector.get_view_definition(view_name, schema=schema)
     except NoSuchTableError as exc:
         raise ValueError(f'View "{view_name}" does not exist.') from exc
     if view_definition is None:
@@ -135,10 +138,10 @@ def get_view_definition(conn: Connection, view_name: str) -> str:
 
 
 def get_distinct_column_values(
-    conn: Connection, table_name: str, column_name: str, limit: int = 500
+    conn: Connection, table_name: str, column_name: str, schema: str | None = None, limit: int = 500
 ) -> list[str]:
     """Get distinct non-null values from a specified column up to a limit."""
-    tbl = table(table_name, column(column_name))
+    tbl = table(table_name, column(column_name), schema=schema)
     col = tbl.c[column_name]
     stmt = select(col).where(col.is_not(None)).distinct().limit(limit)
     try:
@@ -151,9 +154,9 @@ def get_distinct_column_values(
     return list(result.scalars())
 
 
-def get_fk_graph(conn: Connection):
+def get_fk_graph(conn: Connection, schema: str | None = None) -> list[tuple[str | None, list[tuple[str, str | None]]]]:
     inspector = get_inspector(conn)
-    return inspector.get_sorted_table_and_fkc_names()
+    return inspector.get_sorted_table_and_fkc_names(schema=schema)
 
 
 def execute_select(
@@ -166,8 +169,17 @@ def execute_select(
     return mappings.all()
 
 
-def list_databases() -> list[dict[str, str]]:
-    return get_registry().summary()
+def list_databases() -> list[dict[str, str | list[str]]]:
+    """List available databases with their descriptions and schemas."""
+    dbs = get_registry().summary()
+    dbs = [
+        {
+            **db,
+            "schemas": _list_schemas_for(db["name"]),
+        }
+        for db in dbs
+    ]
+    return dbs
 
 
 def _truncate_value(value, max_length: int = 150):
@@ -175,3 +187,8 @@ def _truncate_value(value, max_length: int = 150):
     if isinstance(value, str) and len(value) > max_length:
         return value[:max_length] + "..."
     return value
+
+@ttl_cache(ttl=300)
+def _list_schemas_for(database: str) -> list[str]:
+    with connection_scope(database) as connection:
+        return list_schemas(connection)
