@@ -23,3 +23,10 @@ class DatabaseConfig(BaseModel):
     description: str = Field(
         default="", description="Short description of the dataset/schema."
     )
+    schemas: tuple[str, ...] | None = Field(
+        default=None,
+        description=(
+            "Optional list of schema names to include. When omitted, all schemas "
+            "discovered at startup will be used."
+        ),
+    )

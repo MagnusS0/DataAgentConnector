@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.schemas.config import DatabaseConfig
 
 
@@ -8,6 +8,7 @@ class DatabaseRegistry(BaseModel):
     """Collection of named database configurations."""
 
     databases: dict[str, DatabaseConfig]
+    schema_names: dict[str, tuple[str, ...]] = Field(default_factory=dict)
 
     def names(self) -> list[str]:
         return list(self.databases.keys())
@@ -17,6 +18,22 @@ class DatabaseRegistry(BaseModel):
             {"name": name, "description": cfg.description}
             for name, cfg in self.databases.items()
         ]
+
+    def configured_schemas(self, name: str) -> tuple[str, ...] | None:
+        return self.get(name).schemas
+
+    def set_schema_names(self, name: str, schemas: tuple[str, ...]) -> None:
+        self.schema_names[name] = schemas
+
+    def schemas_for(self, name: str) -> tuple[str, ...]:
+        try:
+            return self.schema_names[name]
+        except KeyError as exc:
+            available = ", ".join(sorted(self.schema_names))
+            raise ValueError(
+                f"Schema names for database '{name}' have not been initialized. "
+                f"Available schema sets: {available or 'none'}"
+            ) from exc
 
     def get(self, name: str) -> DatabaseConfig:
         try:

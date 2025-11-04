@@ -1,7 +1,6 @@
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from functools import cache
-from cachetools.func import ttl_cache
 
 from sqlalchemy import column, create_engine, event, inspect, select, table, text
 from sqlalchemy.engine import Connection, Engine, Inspector, RowMapping
@@ -207,7 +206,5 @@ def _truncate_value(value, max_length: int = 150):
     return value
 
 
-@ttl_cache(ttl=300)
 def list_schemas_for(database: str) -> list[str]:
-    with connection_scope(database) as connection:
-        return list_schemas(connection)
+    return list(get_registry().schemas_for(database))
