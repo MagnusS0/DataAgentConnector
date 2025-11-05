@@ -13,6 +13,7 @@ class TableAnnotation(LanceModel):
     """Schema for table annotations stored in LanceDB."""
 
     database_name: str
+    schema_name: str
     table_name: str
     description: str
     embeddings: Optional[Vector(settings.n_dims)] = None  # type: ignore[valid-type]

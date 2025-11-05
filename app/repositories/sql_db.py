@@ -208,3 +208,7 @@ def _truncate_value(value, max_length: int = 150):
 
 def list_schemas_for(database: str) -> list[str]:
     return list(get_registry().schemas_for(database))
+
+
+def default_schema_for(database: str) -> str:
+    return get_registry().default_schema_for(database)

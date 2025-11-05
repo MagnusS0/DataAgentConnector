@@ -8,6 +8,7 @@ from app.repositories.sql_db import (
     list_tables,
     get_table_metadata,
     get_table_preview,
+    list_schemas_for,
 )
 from app.repositories.annotations import AnnotationRepository
 from app.repositories.column_contents import ColumnContentRepository
@@ -26,6 +27,7 @@ class TableDescription(TypedDict):
     """Type for table description dictionary."""
 
     table_name: str
+    schema_name: str
     description: str | None
 
 
@@ -41,42 +43,57 @@ class AnnotationService:
         self.embedding_gen = embedding_gen
 
     async def annotate_table(
-        self, database: str, table_name: str, *, skip_if_exists: bool = False
+        self,
+        database: str,
+        schema: str,
+        table_name: str,
+        *,
+        skip_if_exists: bool = False,
     ) -> TableAnnotation | None:
         """Generate annotation for a table using the annotation agent."""
         try:
             with connection_scope(database) as conn:
-                metadata = get_table_metadata(conn, table_name)
-                preview = get_table_preview(conn, table_name, limit=5)
+                metadata = get_table_metadata(conn, table_name, schema=schema)
+                preview = get_table_preview(conn, table_name, schema=schema, limit=5)
 
             logger.debug(
-                "Annotating table '%s' in database '%s'.", table_name, database
+                "Annotating table '%s' (schema '%s') in database '%s'.",
+                table_name,
+                schema,
+                database,
             )
 
             # Check if already exists
             schema_hash: str | None = None
             if skip_if_exists:
                 schema_hash = self.annotation_repo.compute_schema_hash(
-                    database, table_name, metadata
+                    database, schema, table_name, metadata
                 )
                 if await self.annotation_repo.exists_by_schema_hash(schema_hash):
                     logger.debug(
-                        "Annotation for table '%s' in database '%s' is up-to-date, skipping.",
+                        (
+                            "Annotation for table '%s' (schema '%s') in database '%s'"
+                            " is up-to-date, skipping."
+                        ),
                         table_name,
+                        schema,
                         database,
                     )
                     return None
 
             # Get column content samples
-            column_repo = ColumnContentRepository(database)
-            column_samples = await self._get_column_samples(column_repo, table_name)
+            column_repo = ColumnContentRepository(database, schema=schema)
+            column_samples = await self._get_column_samples(
+                column_repo, table_name, schema
+            )
 
             description = await self._generate_description(
-                database, table_name, metadata, preview, column_samples
+                database, schema, table_name, metadata, preview, column_samples
             )
 
             annotation = TableAnnotation(
                 database_name=database,
+                schema_name=schema,
                 table_name=table_name,
                 description=description,
                 metadata_json=metadata.model_dump_json(),
@@ -87,8 +104,9 @@ class AnnotationService:
             return annotation
         except Exception as exc:
             logger.error(
-                "Failed to annotate table '%s' in database '%s': %s",
+                "Failed to annotate table '%s' (schema '%s') in database '%s': %s",
                 table_name,
+                schema,
                 database,
                 exc,
                 exc_info=False,
@@ -103,10 +121,20 @@ class AnnotationService:
         max_concurrent: int | None = None,
     ) -> list[TableAnnotation]:
         """Annotate all tables in a given database with controlled concurrency."""
-        with connection_scope(database) as conn:
-            tables = list_tables(conn)
+        schemas = tuple(list_schemas_for(database))
 
-        logger.info("Annotating %d tables in database '%s'.", len(tables), database)
+        table_targets: list[tuple[str, str]] = []
+        with connection_scope(database) as conn:
+            for schema in schemas:
+                names = list_tables(conn, schema=schema)
+                table_targets.extend((schema, name) for name in names)
+
+        logger.info(
+            "Annotating %d tables across %d schemas in database '%s'.",
+            len(table_targets),
+            len(schemas),
+            database,
+        )
 
         # Prevent "too many open files"
         if max_concurrent is None:
@@ -119,14 +147,20 @@ class AnnotationService:
         )
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def annotate_with_limit(table_name: str):
+        async def annotate_with_limit(schema: str, table_name: str):
             async with semaphore:
                 return await self.annotate_table(
-                    database, table_name, skip_if_exists=skip_if_exists
+                    database,
+                    schema,
+                    table_name,
+                    skip_if_exists=skip_if_exists,
                 )
 
         annotations: list[TableAnnotation] = []
-        tasks = [annotate_with_limit(table_name) for table_name in tables]
+        tasks = [
+            annotate_with_limit(schema, table_name)
+            for schema, table_name in table_targets
+        ]
 
         results = await asyncio.gather(*tasks)
         successful = 0
@@ -141,11 +175,11 @@ class AnnotationService:
 
         if skipped > 0:
             logger.warning(
-                "Database '%s': %d successful, %d skipped/failed out of %d tables.",
+                ("Database '%s': %d successful, %d skipped/failed out of %d tables."),
                 database,
                 successful,
                 skipped,
-                len(tables),
+                len(table_targets),
             )
 
         return annotations
@@ -218,6 +252,7 @@ class AnnotationService:
     async def _generate_description(
         self,
         database: str,
+        schema: str,
         table_name: str,
         metadata,
         preview: list[dict],
@@ -226,10 +261,10 @@ class AnnotationService:
         """Use the annotation agent to generate a table description."""
         prompt = (
             f"""
-        For the table named '{table_name}' in the database '{database}',
+        For the table named '{table_name}' in the database '{database}' schema '{schema}',
         generate a concise description based on the following metadata and data preview.
         <metadata>
-        {metadata.to_create_table(table_name=table_name)}
+        {metadata.to_create_table(table_name=f"{schema}.{table_name}")}
         </metadata>
         <preview>
         {preview}
@@ -242,7 +277,11 @@ class AnnotationService:
         ).strip()
 
         logger.debug(
-            "Prompt for table '%s' in database '%s': %s", table_name, database, prompt
+            "Prompt for table '%s' (schema '%s') in database '%s': %s",
+            table_name,
+            schema,
+            database,
+            prompt,
         )
 
         result = await table_annotation_agent.run(prompt)
@@ -253,12 +292,18 @@ class AnnotationService:
         return result.output.description
 
     async def _get_column_samples(
-        self, column_repo: ColumnContentRepository, table_name: str, limit: int = 10
+        self,
+        column_repo: ColumnContentRepository,
+        table_name: str,
+        schema: str,
+        limit: int = 10,
     ) -> list[str]:
         """Get column content samples from lanceDB ColumnContent table for a specific table."""
         try:
             results = await column_repo.get_by_table(
-                table_name, columns=["column_name", "content", "num_distinct"]
+                table_name,
+                schema=schema,
+                columns=["column_name", "content", "num_distinct"],
             )
 
             return [
@@ -269,41 +314,50 @@ class AnnotationService:
             ]
         except ValueError:
             logger.warning(
-                "Column contents not indexed for %s.%s",
+                "Column contents not indexed for %s.%s.%s",
                 column_repo.database,
+                schema,
                 table_name,
             )
             return []
 
 
 @lru_cache(maxsize=32)
-def get_table_descriptions(database: str, tables: tuple[str]) -> list[TableDescription]:
+def get_table_descriptions(
+    database: str, targets: tuple[tuple[str, str], ...]
+) -> list[TableDescription]:
     """
-    Retrieve table descriptions for all tables in the specified database.
-    If no descriptions exist, return None for each table.
-    Cached to avoid repeated database queries.
+    Retrieve cached descriptions for the requested schema-qualified tables.
+    Missing entries yield `description=None`.
     """
+    if not targets:
+        return []
+
     db = get_lance_db()
     table_annotations = open_or_create_table(db, "table_annotations", TableAnnotation)
 
-    result = (
+    records = (
         table_annotations.search()
         .where(f"database_name = '{database}'")
-        .select(["table_name", "description"])
+        .select(["schema_name", "table_name", "description"])
         .to_list()
     )
 
-    if len(result) == 0:
-        logger.warning(f"No table descriptions found for database: {database}")
-        return [
-            TableDescription(table_name=table, description=None) for table in tables
-        ]
+    if len(records) == 0:
+        logger.warning("No table descriptions found for database: %s", database)
+
+    lookup = {
+        (record["schema_name"], record["table_name"]): record["description"]
+        for record in records
+    }
 
     return [
         TableDescription(
-            table_name=record["table_name"], description=record["description"]
+            schema_name=schema,
+            table_name=table,
+            description=lookup.get((schema, table)),
         )
-        for record in result
+        for schema, table in targets
     ]
 
 

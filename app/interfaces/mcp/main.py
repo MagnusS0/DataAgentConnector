@@ -14,6 +14,8 @@ from app.repositories.sql_db import (
     list_databases,
     list_tables,
     list_views,
+    list_schemas_for,
+    default_schema_for,
 )
 from app.repositories.fk_metadata import get_fk_info
 from app.domain.fk_analyzer import connect_tables, shortest_join_path
@@ -51,10 +53,25 @@ def show_tables(
     schema: Annotated[str | None, "Optional name of the schema to use"] = None,
 ) -> list[TableDescription]:
     """List tables in the connected database along with descriptions."""
-    with connection_scope(database) as connection:
-        tables = list_tables(connection, schema=schema)
+    available_schemas = tuple(list_schemas_for(database))
+    if schema is not None:
+        if schema not in available_schemas:
+            raise ValueError(
+                f"Schema '{schema}' is not configured for database '{database}'."
+            )
+        target_schemas = (schema,)
+    else:
+        default_schema = default_schema_for(database)
+        target_schemas = (default_schema,)
 
-    return get_table_descriptions(database, tuple(tables))
+    with connection_scope(database) as connection:
+        table_pairs = [
+            (schema_name, table_name)
+            for schema_name in target_schemas
+            for table_name in list_tables(connection, schema=schema_name)
+        ]
+
+    return get_table_descriptions(database, tuple(table_pairs))
 
 
 @mcp.tool
