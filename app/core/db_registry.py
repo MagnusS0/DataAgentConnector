@@ -9,6 +9,7 @@ class DatabaseRegistry(BaseModel):
 
     databases: dict[str, DatabaseConfig]
     schema_names: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    default_schemas: dict[str, str] = Field(default_factory=dict)
 
     def names(self) -> list[str]:
         return list(self.databases.keys())
@@ -33,6 +34,19 @@ class DatabaseRegistry(BaseModel):
             raise ValueError(
                 f"Schema names for database '{name}' have not been initialized. "
                 f"Available schema sets: {available or 'none'}"
+            ) from exc
+
+    def set_default_schema(self, name: str, schema: str) -> None:
+        self.default_schemas[name] = schema
+
+    def default_schema_for(self, name: str) -> str:
+        try:
+            return self.default_schemas[name]
+        except KeyError as exc:
+            available = ", ".join(sorted(self.default_schemas))
+            raise ValueError(
+                f"Default schema for database '{name}' has not been initialized. "
+                f"Available defaults: {available or 'none'}"
             ) from exc
 
     def get(self, name: str) -> DatabaseConfig:
