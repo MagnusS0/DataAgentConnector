@@ -8,6 +8,7 @@ from app.interfaces.api.main import create_app as create_api_app
 from app.interfaces.mcp.main import create_mcp_app
 from app.services.annotation_service import get_annotation_service
 from app.services.indexing_service import IndexingService
+from app.services.startup_service import initialize_database_schemas
 
 logger = get_logger("main")
 
@@ -21,6 +22,20 @@ def build_application() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Discover and cache database schemas on startup
+        try:
+            start_time = timeit.default_timer()
+            await initialize_database_schemas()
+            elapsed = timeit.default_timer() - start_time
+            logger.info(
+                "Database schemas initialized successfully in %.2f seconds", elapsed
+            )
+        except Exception as exc:
+            logger.exception(
+                "Failed to initialize database schemas on startup: %s", exc
+            )
+            raise
+
         # Create FTS indices on startup
         try:
             start_time = timeit.default_timer()

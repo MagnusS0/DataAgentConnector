@@ -16,6 +16,7 @@ dependencies = [
     "async-lru>=2.0.5",
     "fastmcp>=2.12.4",
     "fastapi[standard]>=0.118.0",
+    "cachetools>=6.2.1",
 ]
 
 [dependency-groups]

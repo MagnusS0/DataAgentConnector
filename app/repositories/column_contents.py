@@ -12,11 +12,18 @@ from app.repositories.lance_db import (
 class ColumnContentRepository:
     """Data access for ColumnContent in LanceDB."""
 
-    def __init__(self, database: str):
+    def __init__(self, database: str, *, schema: str | None = None):
         self.database = database
+        self.schema = schema
         self.table_name = f"column_contents_{database}"
 
-    def search_fts(self, query: str, top_k: int = 5) -> list[dict]:
+    def search_fts(
+        self,
+        query: str,
+        *,
+        schema: str | None = None,
+        top_k: int = 5,
+    ) -> list[dict]:
         """Full-text search on column contents (sync version for simple queries)."""
         db = get_lance_db()
 
@@ -29,11 +36,22 @@ class ColumnContentRepository:
 
         table = db.open_table(self.table_name)
 
+        target_schema = schema or self.schema
+
         try:
+            search = table.search(query, query_type="fts", fts_columns=["content"])
+            if target_schema:
+                search = search.where(f"schema_name = '{target_schema}'")
             results = (
-                table.search(query, query_type="fts", fts_columns=["content"])
-                .select(
-                    ["table_name", "column_name", "content", "num_distinct", "_score"]
+                search.select(
+                    [
+                        "schema_name",
+                        "table_name",
+                        "column_name",
+                        "content",
+                        "num_distinct",
+                        "_score",
+                    ]
                 )
                 .limit(top_k)
                 .to_list()
@@ -49,7 +67,11 @@ class ColumnContentRepository:
         return results
 
     async def get_by_table(
-        self, table_name: str, columns: list[str] | None = None
+        self,
+        table_name: str,
+        *,
+        schema: str | None = None,
+        columns: list[str] | None = None,
     ) -> list[dict]:
         """Get column contents for a specific table."""
         db = await get_lance_db_async()
@@ -60,7 +82,10 @@ class ColumnContentRepository:
                 f"Column contents table '{self.table_name}' does not exist."
             ) from exc
 
+        target_schema = schema or self.schema
         query = table.query().where(f"table_name = '{table_name}'")
+        if target_schema:
+            query = query.where(f"schema_name = '{target_schema}'")
 
         if columns:
             query = query.select(columns)

@@ -11,13 +11,14 @@ class SearchService:
         self,
         database: str,
         query: str,
+        schema: str | None = None,
         top_k: int = 5,
         max_values_shown: int = 20,
         score_threshold: float = 0.7,
     ) -> list[str]:
         """Search for column contents matching query."""
-        repo = ColumnContentRepository(database)
-        results = repo.search_fts(query, top_k=top_k)
+        repo = ColumnContentRepository(database, schema=schema)
+        results = repo.search_fts(query, schema=schema, top_k=top_k)
 
         if not results:
             return []
@@ -31,7 +32,9 @@ class SearchService:
             return []
 
         return [
-            f"Query '{query}' matched column `{row['column_name']}` in table `{row['table_name']}`.\n"
+            f"Query '{query}' matched column `{row['column_name']}` in table `{row['table_name']}`"
+            + (f" (schema `{row['schema_name']}`)" if row.get("schema_name") else "")
+            + ".\n"
             f"Showing {min(max_values_shown, row['num_distinct'])} of {row['num_distinct']} distinct values: "
             f"{row['content'][:max_values_shown]}"
             for row in results

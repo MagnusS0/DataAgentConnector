@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -46,6 +47,7 @@ _SKIP_TYPES = (
 def extract_column_contents(
     database: str,
     *,
+    schemas: Sequence[str] | None = None,
     options: ExtractionOptions | None = None,
 ) -> list[ColumnContent]:
     """Extract column contents from all tables in the specified database.
@@ -60,20 +62,38 @@ def extract_column_contents(
 
     with connection_scope(database) as conn:
         inspector = get_inspector(conn)
-        tables = inspector.get_table_names()
+        if schemas:
+            target_schemas: tuple[str, ...] = tuple(dict.fromkeys(schemas))
+        else:
+            default_schema = inspector.default_schema_name
+            if default_schema is None:
+                raise ValueError(
+                    f"Default schema is undefined for database '{database}'. "
+                    "Please provide explicit schema names."
+                )
+            target_schemas = (default_schema,)
 
-        table_columns = {
-            table_name: inspector.get_columns(table_name) for table_name in tables
+        table_columns: dict[tuple[str, str], Sequence[Any]] = {
+            (schema_name, table_name): inspector.get_columns(
+                table_name, schema=schema_name
+            )
+            for schema_name in target_schemas
+            for table_name in inspector.get_table_names(schema=schema_name)
         }
 
-        tasks: list[tuple[str, str]] = []
-        for table_name, columns in table_columns.items():
-            for col in columns:
-                if _is_textual_column(col["type"]):
-                    tasks.append((table_name, col["name"]))
+        tasks: list[tuple[str, str, str]] = [
+            (schema_name, table_name, col["name"])
+            for (schema_name, table_name), columns in table_columns.items()
+            for col in columns
+            if _is_textual_column(col["type"])
+        ]
 
         if not tasks:
-            logger.warning("No textual columns discovered in database '%s'.", database)
+            logger.warning(
+                "No textual columns discovered in database '%s' for schemas %s.",
+                database,
+                target_schemas,
+            )
             return []
 
         max_workers = min(max(1, options.max_workers), len(tasks))
@@ -85,20 +105,24 @@ def extract_column_contents(
                 pool.submit(
                     _collect_column_values,
                     database,
+                    schema_name,
                     table_name,
                     column_name,
                     options,
-                ): (table_name, column_name)
-                for table_name, column_name in tasks
+                ): (schema_name, table_name, column_name)
+                for schema_name, table_name, column_name in tasks
             }
 
             for future in as_completed(futures):
-                table_name, column_name = futures[future]
+                schema_name, table_name, column_name = futures[future]
                 try:
                     column_content = future.result()
                 except Exception:  # noqa: BLE001
                     logger.exception(
-                        "Failed to extract values for %s.%s", table_name, column_name
+                        "Failed to extract values for %s.%s.%s",
+                        schema_name,
+                        table_name,
+                        column_name,
                     )
                     continue
 
@@ -109,16 +133,18 @@ def extract_column_contents(
                 results.append(column_content)
 
         logger.debug(
-            "Extracted textual values for %d columns (skipped %d) in database '%s'.",
+            "Extracted textual values for %d columns (skipped %d) in database '%s' for schemas %s.",
             len(results),
             total_skipped,
             database,
+            target_schemas,
         )
         return results
 
 
 def _collect_column_values(
     database: str,
+    schema_name: str,
     table_name: str,
     column_name: str,
     options: ExtractionOptions,
@@ -129,12 +155,13 @@ def _collect_column_values(
             conn,
             table_name,
             column_name,
+            schema=schema_name,
             limit=options.max_values_per_column + 1,
         )
 
         if len(distinct_values) > options.max_values_per_column:
             logger.debug(
-                f"Skipping {table_name}.{column_name}: "
+                f"Skipping {schema_name}.{table_name}.{column_name}: "
                 f"more than {options.max_values_per_column} distinct values"
             )
             return None
@@ -149,6 +176,7 @@ def _collect_column_values(
 
     return ColumnContent(
         database_name=database,
+        schema_name=schema_name,
         table_name=table_name,
         column_name=column_name,
         content=filtered,
@@ -161,10 +189,11 @@ def _fetch_distinct_strings(
     table_name: str,
     column_name: str,
     *,
+    schema: str,
     limit: int,
 ) -> list[Any]:
     """Fetch distinct non-null values from a specified column up to a limit."""
-    tbl = table(table_name, column(column_name))
+    tbl = table(table_name, column(column_name), schema=schema)
     col = tbl.c[column_name]
     stmt = select(col).where(col.is_not(None)).distinct().limit(limit)
 

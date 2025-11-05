@@ -44,21 +44,21 @@ class AnnotationRepository:
         table = await self._get_table()
         await batch_insert_async(table, annotations)
 
-    async def get_descriptions_by_database(self, database: str) -> list[dict[str, str]]:
-        """Get all table descriptions for a database."""
+    async def get_descriptions_by_database(
+        self, database: str, schema: str | None = None
+    ) -> list[dict[str, str]]:
+        """Get all table descriptions for a database, optionally filtered by schema."""
         table = await self._get_table()
-        results = (
-            await table.query()
-            .where(f"database_name = '{database}'")
-            .select(["table_name", "description"])
-            .to_list()
-        )
-        return results
+        query = table.query().where(f"database_name = '{database}'")
+        if schema is not None:
+            query = query.where(f"schema_name = '{schema}'")
+        query = query.select(["schema_name", "table_name", "description"])
+        return await query.to_list()
 
     @staticmethod
     def compute_schema_hash(
-        database: str, table_name: str, metadata: TableMetadata
+        database: str, schema: str, table_name: str, metadata: TableMetadata
     ) -> str:
         """Compute schema hash for checking if annotation is current."""
-        hash_input = f"{database}.{table_name}.{metadata.model_dump_json()}"
+        hash_input = f"{database}.{schema}.{table_name}.{metadata.model_dump_json()}"
         return sha256(hash_input.encode("utf-8")).hexdigest()
