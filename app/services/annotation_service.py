@@ -174,8 +174,8 @@ class AnnotationService:
                 skipped += 1
 
         if skipped > 0:
-            logger.warning(
-                ("Database '%s': %d successful, %d skipped/failed out of %d tables."),
+            logger.debug(
+                "Database '%s': %d successful, %d skipped/failed out of %d tables.",
                 database,
                 successful,
                 skipped,

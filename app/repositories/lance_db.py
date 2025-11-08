@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import TypeVar, Literal
+from functools import cache
 from async_lru import alru_cache
 
 import lancedb
@@ -14,6 +15,7 @@ settings = get_settings()
 T = TypeVar("T", bound=LanceModel)
 
 
+@cache
 def get_lance_db() -> DBConnection:
     """Get or create a LanceDB connection."""
     db_path = Path(settings.lance_db_path)

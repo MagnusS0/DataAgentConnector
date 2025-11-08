@@ -71,5 +71,5 @@ allowed_sql_commands = ["SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "WITH",
 [tool.dac.settings.fts_extraction_options]
 max_workers = 8
 max_values_per_column = 1000
-min_length = 2
+min_length = 1
 max_length = 40

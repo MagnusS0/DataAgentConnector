@@ -27,16 +27,15 @@ class ColumnContentRepository:
         """Full-text search on column contents (sync version for simple queries)."""
         db = get_lance_db()
 
-        # Check if table exists before opening
-        if self.table_name not in db.table_names():
+        target_schema = schema or self.schema
+
+        try:
+            table = db.open_table(self.table_name)
+        except Exception:
             raise ValueError(
                 f"Column contents for database '{self.database}' have not been indexed. "
                 f"Please run indexing first."
             )
-
-        table = db.open_table(self.table_name)
-
-        target_schema = schema or self.schema
 
         try:
             search = table.search(query, query_type="fts", fts_columns=["content"])
