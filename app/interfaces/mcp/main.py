@@ -100,21 +100,36 @@ def describe_view(
 
 
 @mcp.tool
-def describe_table(
-    table_name: Annotated[str, "Name of the table to describe"],
+def describe_tables(
+    table_names: Annotated[list[str], "Names of the tables to describe"],
     database: Annotated[str, "Name of the database to use"],
     schema: Annotated[str | None, "Optional name of the schema to use"] = None,
 ) -> str:
     """
-    Get metadata for a specific table.
+    Get metadata for a specific table or list of tables.
     Use this to understand the structure of the table and what columns it contains.
     Includes columns, primary keys, foreign keys, and indexes.
     """
+    result_parts: list[str] = []
+    missing: list[str] = []
+
     with connection_scope(database) as connection:
-        table = get_table_metadata(
-            connection, table_name, schema=schema
-        ).to_create_table(table_name)
-        return table
+        for name in table_names:
+            try:
+                meta = get_table_metadata(connection, name, schema=schema)
+                result_parts.append(meta.to_create_table(name))
+            except ValueError:
+                missing.append(name)
+
+    result = "\n\n".join(result_parts)
+
+    if missing:
+        schema_display = f"{database}.{schema}" if schema else database
+        result += (
+            f"\n\nCould not find table(s) '{', '.join(missing)}' in {schema_display}"
+        )
+
+    return result
 
 
 @mcp.tool
