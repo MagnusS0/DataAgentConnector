@@ -145,13 +145,14 @@ def get_distinct_values(
     Useful for understanding the range of values in categorical columns.
     """
     with connection_scope(database) as connection:
-        return get_distinct_column_values(
+        values = get_distinct_column_values(
             conn=connection,
             table_name=table_name,
             column_name=column_name,
             schema=schema,
             limit=limit,
         )
+        return [str(v) for v in values]
 
 
 @mcp.tool
