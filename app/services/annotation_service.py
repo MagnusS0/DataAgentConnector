@@ -16,6 +16,7 @@ from app.repositories.lance_db import get_lance_db, open_or_create_table
 from app.models.lance import TableAnnotation
 from app.schemas.agents import TableDescription as TableDescriptionModel
 from app.domain.embed import EmbeddingGenerator
+from app.domain.column_masker import get_column_masker
 from app.core.config import get_settings
 from app.core.logging import get_logger
 
@@ -52,9 +53,13 @@ class AnnotationService:
     ) -> TableAnnotation | None:
         """Generate annotation for a table using the annotation agent."""
         try:
+            masker = get_column_masker(database)
+
             with connection_scope(database) as conn:
                 metadata = get_table_metadata(conn, table_name, schema=schema)
                 preview = get_table_preview(conn, table_name, schema=schema, limit=5)
+
+            preview = masker.mask_rows(preview)  # Mask before LLM
 
             logger.debug(
                 "Annotating table '%s' (schema '%s') in database '%s'.",
@@ -81,10 +86,9 @@ class AnnotationService:
                     )
                     return None
 
-            # Get column content samples
             column_repo = ColumnContentRepository(database, schema=schema)
             column_samples = await self._get_column_samples(
-                column_repo, table_name, schema
+                column_repo, table_name, schema, masker=masker
             )
 
             description = await self._generate_description(
@@ -297,6 +301,7 @@ class AnnotationService:
         table_name: str,
         schema: str,
         limit: int = 10,
+        masker=None,
     ) -> list[str]:
         """Get column content samples from lanceDB ColumnContent table for a specific table."""
         try:
@@ -305,6 +310,15 @@ class AnnotationService:
                 schema=schema,
                 columns=["column_name", "content", "num_distinct"],
             )
+
+            if masker is not None:
+                results = [
+                    row
+                    for row in results
+                    if not masker.is_column_masked(
+                        row["column_name"], table_name=table_name, schema_name=schema
+                    )
+                ]
 
             return [
                 f"Column: {row['column_name']}\n"

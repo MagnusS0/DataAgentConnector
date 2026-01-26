@@ -1,5 +1,10 @@
+from typing import TYPE_CHECKING
+
 from app.repositories.column_contents import ColumnContentRepository
 from app.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from app.domain.column_masker import ColumnMasker
 
 logger = get_logger(__name__)
 
@@ -15,6 +20,7 @@ class SearchService:
         top_k: int = 5,
         max_values_shown: int = 20,
         score_threshold: float = 0.7,
+        masker: "ColumnMasker | None" = None,
     ) -> list[str]:
         """Search for column contents matching query."""
         repo = ColumnContentRepository(database, schema=schema)
@@ -27,6 +33,17 @@ class SearchService:
         top_score = results[0]["_score"]
         min_score = top_score * score_threshold
         results = [r for r in results if r["_score"] >= min_score]
+
+        if masker is not None:
+            results = [
+                r
+                for r in results
+                if not masker.is_column_masked(
+                    r["column_name"],
+                    table_name=r.get("table_name"),
+                    schema_name=r.get("schema_name"),
+                )
+            ]
 
         if not results:
             return []

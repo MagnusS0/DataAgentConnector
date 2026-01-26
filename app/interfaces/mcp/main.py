@@ -19,6 +19,7 @@ from app.repositories.sql_db import (
 )
 from app.repositories.fk_metadata import get_fk_info
 from app.domain.fk_analyzer import connect_tables, shortest_join_path
+from app.domain.column_masker import get_column_masker
 from app.services.annotation_service import get_table_descriptions, TableDescription
 from app.services.search_service import SearchService
 from app.core.config import get_settings
@@ -110,6 +111,7 @@ def describe_tables(
     Use this to understand the structure of the table and what columns it contains.
     Includes columns, primary keys, foreign keys, and indexes.
     """
+    masker = get_column_masker(database)
     result_parts: list[str] = []
     missing: list[str] = []
 
@@ -117,7 +119,15 @@ def describe_tables(
         for name in table_names:
             try:
                 meta = get_table_metadata(connection, name, schema=schema)
-                result_parts.append(meta.to_create_table(name))
+                ddl = meta.to_create_table(name)
+
+                # Append masked columns comment if any columns are masked
+                column_names = [col["name"] for col in meta.columns]
+                masked = masker.get_masked_columns(column_names)
+                if masked:
+                    ddl += f"\n-- MASKED COLUMNS: {', '.join(sorted(masked))}"
+
+                result_parts.append(ddl)
             except ValueError:
                 missing.append(name)
 
@@ -144,6 +154,10 @@ def get_distinct_values(
     Get distinct values from a specific column in a table.
     Useful for understanding the range of values in categorical columns.
     """
+    masker = get_column_masker(database)
+    if masker.is_column_masked(column_name, table_name=table_name, schema_name=schema):
+        return ["[ACCESS DENIED: Column contains sensitive data]"]
+
     with connection_scope(database) as connection:
         values = get_distinct_column_values(
             conn=connection,
@@ -170,9 +184,10 @@ def find_relevant_columns_and_content(
 
     Returns the top_k most relevant contents including table, and column information.
     """
+    masker = get_column_masker(database)
     search_service = SearchService()
     return search_service.search_column_contents(
-        database=database, query=query, schema=schema, top_k=top_k
+        database=database, query=query, schema=schema, top_k=top_k, masker=masker
     )
 
 
@@ -187,9 +202,10 @@ def preview_table(
     Can be used to get a quick look at the data contained in the table.
     Default to 5 rows.
     """
+    masker = get_column_masker(database)
     with connection_scope(database) as connection:
         rows = get_table_preview(connection, table_name, schema=schema)
-        return rows
+        return masker.mask_rows(rows)
 
 
 @mcp.tool
@@ -202,9 +218,10 @@ def query_database(
     Only SELECT queries are allowed.
     Make sure to use the schema.table notation if not querying the default schema.
     """
+    masker = get_column_masker(database)
     with connection_scope(database) as connection:
         rows = execute_select(connection, query, limit=settings.mcp_query_limit)
-        return [dict(row) for row in rows]
+        return masker.mask_rows([dict(row) for row in rows])
 
 
 @mcp.tool

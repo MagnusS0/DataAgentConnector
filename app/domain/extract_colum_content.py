@@ -23,6 +23,7 @@ from app.models.lance import ColumnContent
 from app.core.logging import get_logger
 from app.core.config import get_settings
 from app.schemas.config import ExtractionOptions
+from app.domain.column_masker import get_column_masker
 
 logger = get_logger(__name__)
 
@@ -81,12 +82,35 @@ def extract_column_contents(
             for table_name in inspector.get_table_names(schema=schema_name)
         }
 
-        tasks: list[tuple[str, str, str]] = [
-            (schema_name, table_name, col["name"])
-            for (schema_name, table_name), columns in table_columns.items()
-            for col in columns
-            if _is_textual_column(col["type"])
-        ]
+        masker = get_column_masker(database)
+        masked_columns: list[tuple[str, str, str]] = []
+        tasks: list[tuple[str, str, str]] = []
+
+        for (schema_name, table_name), columns in table_columns.items():
+            for col in columns:
+                if not _is_textual_column(col["type"]):
+                    continue
+                col_name = col["name"]
+                if masker.is_column_masked(
+                    col_name, table_name=table_name, schema_name=schema_name
+                ):
+                    masked_columns.append((schema_name, table_name, col_name))
+                else:
+                    tasks.append((schema_name, table_name, col_name))
+
+        if masked_columns:
+            logger.info(
+                "Excluding %d masked column(s) from FTS indexing in database '%s'.",
+                len(masked_columns),
+                database,
+            )
+            for schema_name, table_name, col_name in masked_columns:
+                logger.debug(
+                    "Masked column excluded from FTS: %s.%s.%s",
+                    schema_name,
+                    table_name,
+                    col_name,
+                )
 
         if not tasks:
             logger.warning(
