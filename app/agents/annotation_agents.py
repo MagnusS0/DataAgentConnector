@@ -16,7 +16,7 @@ table_annotation_agent = Agent(
     model_settings=ModelSettings(max_tokens=512, temperature=0.3),
     system_prompt=f"{PROMPT_TABLE_ANNOTATION_AGENT}",
     output_type=TableDescription,
-    output_retries=3,
+    retries={"output": 3},
 )
 
 database_annotation_agent = Agent(
@@ -25,5 +25,5 @@ database_annotation_agent = Agent(
     model_settings=ModelSettings(max_tokens=1024, temperature=0.3),
     system_prompt=f"{PROMPT_DATABASE_ANNOTATION_AGENT}",
     output_type=DatabaseDescription,
-    output_retries=3,
+    retries={"output": 3},
 )

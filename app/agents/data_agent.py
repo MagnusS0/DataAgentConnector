@@ -1,5 +1,5 @@
 from pydantic_ai import Agent, ModelSettings
-from pydantic_ai.mcp import MCPServerStreamableHTTP
+from pydantic_ai.mcp import MCPToolset
 
 from app.core.config import get_settings
 from app.agents.config import get_llm_model
@@ -7,7 +7,7 @@ from app.agents.prompts.data_agent_prompt import PROMPT_DATA_AGENT
 
 settings = get_settings()
 
-mcp_client = MCPServerStreamableHTTP(url="http://localhost:8001/mcp/", max_retries=3)
+mcp_client = MCPToolset("http://localhost:8001/mcp/", max_retries=3)
 
 
 data_agent = Agent(

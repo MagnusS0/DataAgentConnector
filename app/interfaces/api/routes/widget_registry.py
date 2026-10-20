@@ -1,4 +1,4 @@
-import asyncio
+import inspect
 from functools import wraps
 from typing import Any, Awaitable, Callable
 
@@ -21,7 +21,7 @@ def register_widget(config: dict[str, Any]):
             widget_id = config.setdefault("widgetId", endpoint)
             WIDGETS[widget_id] = config
 
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
 
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
