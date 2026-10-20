@@ -25,7 +25,7 @@ environment variables) configures the LLM provider.
 | --- | --- |
 | get_databases | Lists registered databases and descriptions. |
 | show_tables / show_views | Enumerates tables/views with cached annotations where available. |
-| describe_table / describe_view | Returns DDL-like metadata or view SQL. |
+| describe_tables / describe_view | Returns DDL-like metadata or view SQL. |
 | get_distinct_values | Pulls sample categorical values (limit enforced). |
 | preview_table | Returns first rows of non-binary columns. |
 | find_relevant_columns_and_content | BM25 search over distinct textual values with score filtering. |
@@ -52,11 +52,11 @@ environment variables) configures the LLM provider.
 
    ```toml
    [databases.my_database]
-   connection_string = "sqlite:///path/to/your/database.db"
+   url = "sqlite:///path/to/your/database.db"
    description = "My local SQLite database"
 
    [databases.another_database]
-   connection_string = "postgresql://user:password@localhost:5432/another_database"
+   url = "postgresql://user:password@localhost:5432/another_database"
    description = "Another PostgreSQL database"
    ```
 
