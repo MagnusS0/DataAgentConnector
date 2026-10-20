@@ -15,7 +15,6 @@ from app.repositories.column_contents import ColumnContentRepository
 from app.repositories.lance_db import get_lance_db, open_or_create_table, sql_literal
 from app.models.lance import TableAnnotation
 from app.schemas.agents import TableDescription as TableDescriptionModel
-from app.domain.embed import EmbeddingGenerator
 from app.domain.column_masker import get_column_masker
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -35,13 +34,8 @@ class TableDescription(TypedDict):
 class AnnotationService:
     """Service for generating and storing table annotations."""
 
-    def __init__(
-        self,
-        annotation_repo: AnnotationRepository,
-        embedding_gen: EmbeddingGenerator,
-    ):
+    def __init__(self, annotation_repo: AnnotationRepository):
         self.annotation_repo = annotation_repo
-        self.embedding_gen = embedding_gen
 
     async def annotate_table(
         self,
@@ -101,7 +95,6 @@ class AnnotationService:
                 table_name=table_name,
                 description=description,
                 metadata_json=metadata.model_dump_json(),
-                embeddings=None,  # to be filled later
                 schema_hash=schema_hash,
             )
 
@@ -188,30 +181,6 @@ class AnnotationService:
 
         return annotations
 
-    async def save_with_embeddings(
-        self, annotations: list[TableAnnotation] | TableAnnotation
-    ) -> None:
-        """
-        Add embeddings to annotations and save to LanceDB.
-        Expects the `embeddings` field to be None and fills it with generated embeddings.
-        """
-        if isinstance(annotations, TableAnnotation):
-            annotations = [annotations]
-
-        if not annotations:
-            return
-
-        descriptions = [a.description for a in annotations]
-        embeddings = await self.embedding_gen.generate_batch(
-            descriptions, batch_size=32
-        )
-
-        # Attach embeddings
-        for annotation, embedding in zip(annotations, embeddings):
-            annotation.embeddings = embedding
-
-        await self.annotation_repo.save_batch(annotations)
-
     async def store_table_descriptions(self) -> None:
         """Store table descriptions for all configured databases in LanceDB."""
         if not settings.annotate_on_startup:
@@ -243,7 +212,7 @@ class AnnotationService:
                 continue
 
             save_tasks.append(
-                asyncio.create_task(self.save_with_embeddings(annotations))
+                asyncio.create_task(self.annotation_repo.save_batch(annotations))
             )
 
         if save_tasks:
@@ -391,7 +360,4 @@ def clear_table_description_cache() -> None:
 # Factory for dependency injection
 def get_annotation_service() -> AnnotationService:
     """Create annotation service with dependencies."""
-    return AnnotationService(
-        annotation_repo=AnnotationRepository(),
-        embedding_gen=EmbeddingGenerator(),
-    )
+    return AnnotationService(annotation_repo=AnnotationRepository())
