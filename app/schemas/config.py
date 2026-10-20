@@ -24,9 +24,9 @@ class AnonymizationConfig(BaseModel):
 
 class ExtractionOptions(BaseModel):
     max_workers: int = Field(default=8, ge=1)
-    max_values_per_column: int = Field(default=1000, ge=1)
+    max_values_per_column: int = Field(default=10000, ge=1)
     min_length: int = Field(default=2, ge=0)
-    max_length: int = Field(default=40, ge=1)
+    max_length: int = Field(default=120, ge=1)
 
     model_config = ConfigDict(frozen=True)
 

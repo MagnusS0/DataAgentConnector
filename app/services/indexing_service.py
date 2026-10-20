@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from typing import Literal
 
 from lancedb.index import FTS
+from lancedb.query import DocumentGranularity
 
 from app.repositories.column_contents import ColumnContentRepository
 from app.repositories.lance_db import get_lance_db_async, open_or_create_table_async
@@ -75,12 +76,18 @@ class IndexingService:
             with_position=True,
             stem=False,
             language=language,
+            # Score each distinct value on its own, not the whole column as one document.
+            document_granularity=DocumentGranularity.LIST_ELEMENT,
         )
 
+        # Name it explicitly: list-element indexes are otherwise auto-named
+        # "content_list_element_idx", and replace=True would keep an older
+        # row-level "content_idx" alongside it.
         await table.create_index(
             "content",
             replace=True,
             config=index,
+            name="content_idx",
         )
         await table.wait_for_index(["content_idx"])
 

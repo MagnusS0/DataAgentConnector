@@ -52,7 +52,7 @@ class SearchService:
             f"Query '{query}' matched column `{row['column_name']}` in table `{row['table_name']}`"
             + (f" (schema `{row['schema_name']}`)" if row.get("schema_name") else "")
             + ".\n"
-            f"Showing {min(max_values_shown, row['num_distinct'])} of {row['num_distinct']} distinct values: "
-            f"{row['content'][:max_values_shown]}"
+            f"Matching values: {row['matched_values'][:max_values_shown]} "
+            f"(column has {row['num_distinct']} distinct values)"
             for row in results
         ]
