@@ -16,7 +16,7 @@ class TableAnnotation(LanceModel):
     schema_name: str
     table_name: str
     description: str
-    embeddings: Optional[Vector(settings.n_dims)] = None  # type: ignore[valid-type]
+    embeddings: Optional[Vector(settings.n_dims)] = None  # ty: ignore[invalid-type-form]
     metadata_json: str = ""
     schema_hash: str | None = None
 

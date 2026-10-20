@@ -5,30 +5,33 @@ description = "A connector for Data Agents to interface with various databases t
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "lancedb>=0.25.2",
-    "pydantic>=2.11.10",
-    "pydantic-settings>=2.11.0",
-    "pyodbc>=5.2.0",
-    "orjson>=3.10.7",
-    "rich>=14.1.0",
-    "scipy>=1.16.2",
-    "sqlalchemy>=2.0.44",
-    "async-lru>=2.0.5",
-    "fastmcp>=2.12.4",
-    "fastapi[standard]>=0.118.0",
-    "cachetools>=6.2.1",
+    "lancedb>=0.40.0",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.1",
+    "pyodbc>=5.3.0",
+    "rich>=15.0.0",
+    "scipy>=1.18.1",
+    "sqlalchemy>=2.1.5",
+    "async-lru>=2.4.0",
+    "fastmcp>=4.1.2",
+    "fastapi[standard]>=0.156.2",
+    "cachetools>=7.2.4",
 ]
 
 [dependency-groups]
 ai = [
-    "pydantic-ai-slim[openai]>=1.0.17",
-    "sentence-transformers>=5.1.1",
+    "pydantic-ai-slim[openai,mcp]>=2.58.0",
+    "sentence-transformers>=6.1.0",
 ]
 dev = [
-    "prek>=0.3.0",
-    "ruff>=0.13.3",
-    "ty>=0.0.1a21",
+    "prek>=0.5.6",
+    "ruff>=0.17.1",
+    "ty>=0.0.90",
 ]
+
+[tool.ruff.lint]
+# Keep the pre-0.16 default rule set; ruff's expanded defaults are a separate cleanup.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.uv.sources]
 torch = [

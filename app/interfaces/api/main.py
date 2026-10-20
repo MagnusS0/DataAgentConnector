@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.types import StatelessLifespan, StatefulLifespan
 
@@ -17,7 +16,6 @@ def create_app(
         title="Data Agent Connector API",
         description="REST endpoints for Data Agent Connector functionality.",
         lifespan=lifespan,
-        default_response_class=ORJSONResponse,
     )
 
     application.add_middleware(
