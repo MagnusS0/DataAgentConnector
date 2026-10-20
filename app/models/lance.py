@@ -1,12 +1,7 @@
 from hashlib import sha256
-from typing import Optional
 
-from lancedb.pydantic import LanceModel, Vector
+from lancedb.pydantic import LanceModel
 from pydantic import field_validator
-
-from app.core.config import get_settings
-
-settings = get_settings()
 
 
 class TableAnnotation(LanceModel):
@@ -16,7 +11,6 @@ class TableAnnotation(LanceModel):
     schema_name: str
     table_name: str
     description: str
-    embeddings: Optional[Vector(settings.n_dims)] = None  # ty: ignore[invalid-type-form]
     metadata_json: str = ""
     schema_hash: str | None = None
 

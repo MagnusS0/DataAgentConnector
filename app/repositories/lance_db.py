@@ -71,8 +71,13 @@ def open_or_create_table(
     db: DBConnection, table_name: str, schema: type[LanceModel] | None = None
 ) -> Table:
     """Open an existing LanceDB table or create a new one if it doesn't exist."""
-    if schema is None:
+    # Open first: create_table(exist_ok=True) rejects a table whose schema differs
+    # from the model, e.g. one written before a field was removed.
+    try:
         return db.open_table(table_name)
+    except ValueError:
+        if schema is None:
+            raise
 
     return db.create_table(table_name, schema=schema, exist_ok=True)
 
@@ -81,7 +86,10 @@ async def open_or_create_table_async(
     db: AsyncConnection, table_name: str, schema: type[LanceModel] | None = None
 ) -> AsyncTable:
     """Asynchronously open an existing LanceDB table or create a new one if it doesn't exist."""
-    if schema is None:
+    try:
         return await db.open_table(table_name)
+    except ValueError:
+        if schema is None:
+            raise
 
     return await db.create_table(table_name, schema=schema, exist_ok=True)

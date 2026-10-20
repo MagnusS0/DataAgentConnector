@@ -9,8 +9,7 @@ Plus mirrored REST endpoint that can be connected to UIs etc.
 
 - **Read-only SQL gateway:** SQLAlchemy engines are locked to safe commands defined in
 `[tool.dac.settings.allowed_sql_commands]`.
-- **Automatic metadata:** LLM agents summarise tables; LanceDB stores summaries plus
-sentence-transformer embeddings (embeddings are currently unused).
+- **Automatic metadata:** LLM agents summarise tables; LanceDB stores the summaries.
 - **Column-content retrieval:** Distinct textual values are sampled, filtered, and indexed with
 LanceDB BM25 for direct content search in columns.
 - **MCP + REST:** `/mcp` serves FastMCP, while `/widgets/*` exposes REST endpoints
@@ -104,8 +103,7 @@ DataAgentConnector/
      `column_contents_<database>` and builds BM25 indexes that score each distinct value on its own.
      Searches boost exact matches over typo-tolerant (one edit) matches and return the matching values per column.
   3. Annotation workflow (`app/services/annotation_service.py`) runs LLM prompts with table metadata,
-     previews, and sampled values (schema hashes used to skip already processed tables), embeddings are added via
-     sentence-transformers.
+     previews, and sampled values (schema hashes used to skip already processed tables).
 
 ## FK Graph & Join Paths
 
