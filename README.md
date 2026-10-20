@@ -28,7 +28,7 @@ environment variables) configures the LLM provider.
 | describe_tables / describe_view | Returns DDL-like metadata or view SQL. |
 | get_distinct_values | Pulls sample categorical values (limit enforced). |
 | preview_table | Returns first rows of non-binary columns. |
-| find_relevant_columns_and_content | BM25 search over distinct textual values with score filtering. |
+| find_relevant_columns_and_content | Typo-tolerant BM25 search over distinct textual values; returns the matching values per column. |
 | query_database | Executes read-only SQL with a configurable row cap (mcp_query_limit). |
 | join_path | Suggests shortest join sequences or Steiner-tree paths across tables. |
 
@@ -101,7 +101,8 @@ DataAgentConnector/
      values while filtering binary, numeric, or overly long fields; tunable via
      `tool.dac.settings.fts_extraction_options`.
   2. FTS indexing (`app/services/indexing_service.py`) persists values into LanceDB tables named
-     `column_contents_<database>` and builds BM25 indexes.
+     `column_contents_<database>` and builds BM25 indexes that score each distinct value on its own.
+     Searches boost exact matches over typo-tolerant (one edit) matches and return the matching values per column.
   3. Annotation workflow (`app/services/annotation_service.py`) runs LLM prompts with table metadata,
      previews, and sampled values (schema hashes used to skip already processed tables), embeddings are added via
      sentence-transformers.

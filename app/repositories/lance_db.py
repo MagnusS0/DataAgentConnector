@@ -15,6 +15,12 @@ settings = get_settings()
 T = TypeVar("T", bound=LanceModel)
 
 
+def sql_literal(value: str) -> str:
+    """Quote a string for use in a LanceDB filter expression."""
+    escaped = value.replace("'", "''")
+    return f"'{escaped}'"
+
+
 @cache
 def get_lance_db() -> DBConnection:
     """Get or create a LanceDB connection."""

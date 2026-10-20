@@ -12,7 +12,7 @@ from app.repositories.sql_db import (
 )
 from app.repositories.annotations import AnnotationRepository
 from app.repositories.column_contents import ColumnContentRepository
-from app.repositories.lance_db import get_lance_db, open_or_create_table
+from app.repositories.lance_db import get_lance_db, open_or_create_table, sql_literal
 from app.models.lance import TableAnnotation
 from app.schemas.agents import TableDescription as TableDescriptionModel
 from app.domain.embed import EmbeddingGenerator
@@ -350,9 +350,17 @@ def get_table_descriptions(
     db = get_lance_db()
     table_annotations = open_or_create_table(db, "table_annotations", TableAnnotation)
 
+    tables_by_schema: dict[str, list[str]] = {}
+    for schema, table in targets:
+        tables_by_schema.setdefault(schema, []).append(table)
+    target_filter = " OR ".join(
+        f"(schema_name = {sql_literal(schema)} AND table_name IN ({', '.join(map(sql_literal, tables))}))"
+        for schema, tables in tables_by_schema.items()
+    )
+
     records = (
         table_annotations.search()
-        .where(f"database_name = '{database}'")
+        .where(f"database_name = {sql_literal(database)} AND ({target_filter})")
         .select(["schema_name", "table_name", "description"])
         .to_list()
     )
