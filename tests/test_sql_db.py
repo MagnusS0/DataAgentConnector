@@ -28,7 +28,10 @@ def test_select_limit() -> None:
     ["DELETE FROM customers", "DROP TABLE customers", "UPDATE customers SET city='x'"],
 )
 def test_write_statements_are_blocked(query: str) -> None:
-    with connection_scope("shop") as conn, pytest.raises(StatementError):
+    with (
+        connection_scope("scratch") as conn,
+        pytest.raises(StatementError, match="not allowed"),
+    ):
         execute_select(conn, query)
 
 

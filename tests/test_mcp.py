@@ -1,8 +1,11 @@
 import asyncio
 
+import pytest
 from fastmcp import Client
 
 from app.interfaces.mcp.main import mcp
+
+pytestmark = pytest.mark.usefixtures("indexed")
 
 EXPECTED_TOOLS = {
     "get_databases",
@@ -66,10 +69,11 @@ def test_query_database_select() -> None:
 def test_query_database_delete_is_error() -> None:
     result = call(
         "query_database",
-        {"query": "DELETE FROM customers", "database": "shop"},
+        {"query": "DELETE FROM customers", "database": "scratch"},
         raise_on_error=False,
     )
     assert result.is_error
+    assert "not allowed" in result.content[0].text
 
 
 def test_describe_tables_notes_masked_columns() -> None:

@@ -10,6 +10,8 @@ import pytest
 
 _ROOT = Path(tempfile.mkdtemp(prefix="dac-tests-"))
 _SHOP_DB = _ROOT / "shop.db"
+# Write-guard tests run against this copy, so a broken guard cannot damage shop.db.
+_SCRATCH_DB = _ROOT / "scratch.db"
 
 _SCHEMA = """
 CREATE TABLE customers (
@@ -33,8 +35,8 @@ CREATE VIEW v_orders AS
 """
 
 
-def _build_shop_db() -> None:
-    conn = sqlite3.connect(_SHOP_DB)
+def _build_db(path: Path) -> None:
+    conn = sqlite3.connect(path)
     conn.executescript(_SCHEMA)
     conn.executemany(
         "INSERT INTO customers VALUES (?, ?, ?, ?)",
@@ -66,7 +68,8 @@ def _build_shop_db() -> None:
 
 
 def _configure_env() -> None:
-    _build_shop_db()
+    _build_db(_SHOP_DB)
+    _build_db(_SCRATCH_DB)
     databases_file = _ROOT / "databases.toml"
     databases_file.write_text(
         f"""
@@ -76,6 +79,10 @@ description = "Test shop"
 
 [databases.shop.anonymization]
 masked_columns = ["ssn"]
+
+[databases.scratch]
+url = "sqlite:///{_SCRATCH_DB}"
+description = "Disposable copy for write-guard tests"
 """
     )
     os.environ.update(
@@ -92,8 +99,8 @@ masked_columns = ["ssn"]
 _configure_env()
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _startup_pipeline() -> None:
+@pytest.fixture(scope="session")
+def indexed() -> None:
     """Run the real schema discovery and FTS indexing once per session."""
     from app.services.indexing_service import IndexingService
     from app.services.startup_service import initialize_database_schemas

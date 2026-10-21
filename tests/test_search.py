@@ -1,8 +1,12 @@
 import pytest
 
-from app.domain.column_masker import get_column_masker
+from app.domain.column_masker import ColumnMasker
 from app.repositories.column_contents import ColumnContentRepository
+from app.repositories.lance_db import get_lance_db
+from app.schemas.config import AnonymizationConfig
 from app.services.search_service import SearchService
+
+pytestmark = pytest.mark.usefixtures("indexed")
 
 
 @pytest.fixture
@@ -40,10 +44,24 @@ def test_schema_filter(repo: ColumnContentRepository) -> None:
     assert repo.search_fts("Oslo", schema="does_not_exist") == []
 
 
-def test_masked_column_never_returned() -> None:
-    masker = get_column_masker("shop")
-    out = SearchService().search_column_contents("shop", "111-11-1111", masker=masker)
-    assert all("`ssn`" not in line for line in out)
+def test_masked_column_is_not_indexed() -> None:
+    table = get_lance_db().open_table("column_contents_shop")
+    rows = (
+        table.search()
+        .where("table_name = 'customers'")
+        .select(["column_name"])
+        .to_list()
+    )
+    indexed_columns = {r["column_name"] for r in rows}
+    assert "city" in indexed_columns
+    assert "ssn" not in indexed_columns
+
+
+def test_search_drops_columns_the_masker_hides() -> None:
+    masker = ColumnMasker(AnonymizationConfig(masked_columns=("city",)))
+    assert SearchService().search_column_contents("shop", "Oslo")
+    out = SearchService().search_column_contents("shop", "Oslo", masker=masker)
+    assert all("`city`" not in line for line in out)
 
 
 def test_unindexed_database_raises() -> None:
