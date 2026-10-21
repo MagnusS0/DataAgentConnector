@@ -24,6 +24,7 @@ ai = [
 ]
 dev = [
     "prek>=0.5.6",
+    "pytest>=9.1.1",
     "ruff>=0.17.1",
     "ty>=0.0.90",
 ]
@@ -31,6 +32,9 @@ dev = [
 [tool.uv]
 # GHSA-hq85-5cpj-mr62: earlier uv releases trust a compromised emSign root CA.
 required-version = ">=0.13.4"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 [tool.ruff.lint]
 select = [
