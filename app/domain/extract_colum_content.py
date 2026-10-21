@@ -5,25 +5,25 @@ from typing import Any
 from sqlalchemy import column, select, table
 from sqlalchemy.engine import Connection
 from sqlalchemy.sql.sqltypes import (
+    BINARY,
+    BLOB,
     JSON,
+    VARBINARY,
+    Date,
     LargeBinary,
     NullType,
     String,
     Text,
     Unicode,
     UnicodeText,
-    BLOB,
-    BINARY,
-    VARBINARY,
-    Date,
 )
 
-from app.repositories.sql_db import connection_scope, get_inspector
-from app.models.lance import ColumnContent
-from app.core.logging import get_logger
 from app.core.config import get_settings
-from app.schemas.config import ExtractionOptions
+from app.core.logging import get_logger
 from app.domain.column_masker import get_column_masker
+from app.models.lance import ColumnContent
+from app.repositories.sql_db import connection_scope, get_inspector
+from app.schemas.config import ExtractionOptions
 
 logger = get_logger(__name__)
 

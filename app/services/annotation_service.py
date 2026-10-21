@@ -3,21 +3,21 @@ from functools import lru_cache
 from typing import TypedDict
 
 from app.agents.annotation_agents import table_annotation_agent
-from app.repositories.sql_db import (
-    connection_scope,
-    list_tables,
-    get_table_metadata,
-    get_table_preview,
-    list_schemas_for,
-)
+from app.core.config import get_settings
+from app.core.logging import get_logger
+from app.domain.column_masker import get_column_masker
+from app.models.lance import TableAnnotation
 from app.repositories.annotations import AnnotationRepository
 from app.repositories.column_contents import ColumnContentRepository
 from app.repositories.lance_db import get_lance_db, open_or_create_table, sql_literal
-from app.models.lance import TableAnnotation
+from app.repositories.sql_db import (
+    connection_scope,
+    get_table_metadata,
+    get_table_preview,
+    list_schemas_for,
+    list_tables,
+)
 from app.schemas.agents import TableDescription as TableDescriptionModel
-from app.domain.column_masker import get_column_masker
-from app.core.config import get_settings
-from app.core.logging import get_logger
 
 settings = get_settings()
 logger = get_logger(__name__)

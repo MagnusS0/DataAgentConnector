@@ -1,5 +1,5 @@
+from collections.abc import Sequence
 from functools import lru_cache
-from typing import Sequence
 
 from app.repositories.sql_db import connection_scope, get_inspector
 

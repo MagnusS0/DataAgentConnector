@@ -1,10 +1,12 @@
 from functools import lru_cache
-from app.core.config import get_settings
-from pydantic_ai.providers.openai import OpenAIProvider
+
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+from app.core.config import get_settings
 
 
-@lru_cache()
+@lru_cache
 def get_openai_provider() -> OpenAIProvider:
     """
     Dependency to get the OpenAI provider.

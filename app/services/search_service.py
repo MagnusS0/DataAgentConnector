@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
-from app.repositories.column_contents import ColumnContentRepository
 from app.core.logging import get_logger
+from app.repositories.column_contents import ColumnContentRepository
 
 if TYPE_CHECKING:
     from app.domain.column_masker import ColumnMasker

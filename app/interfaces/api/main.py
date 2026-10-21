@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
-from starlette.types import StatelessLifespan, StatefulLifespan
+from starlette.types import StatefulLifespan, StatelessLifespan
 
 from app.core.config import get_settings
 from app.interfaces.api.routes.openbb_widgets import router as openbb_widgets_router

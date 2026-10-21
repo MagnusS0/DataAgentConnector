@@ -1,9 +1,9 @@
 from pydantic_ai import Agent, ModelSettings
 from pydantic_ai.mcp import MCPToolset
 
-from app.core.config import get_settings
 from app.agents.config import get_llm_model
 from app.agents.prompts.data_agent_prompt import PROMPT_DATA_AGENT
+from app.core.config import get_settings
 
 settings = get_settings()
 

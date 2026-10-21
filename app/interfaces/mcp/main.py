@@ -4,25 +4,25 @@ from fastmcp import FastMCP
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 
+from app.core.config import get_settings
+from app.domain.column_masker import get_column_masker
+from app.domain.fk_analyzer import connect_tables, shortest_join_path
+from app.repositories.fk_metadata import get_fk_info
 from app.repositories.sql_db import (
     connection_scope,
+    default_schema_for,
     execute_select,
+    get_distinct_column_values,
     get_table_metadata,
     get_table_preview,
     get_view_definition,
-    get_distinct_column_values,
     list_databases,
+    list_schemas_for,
     list_tables,
     list_views,
-    list_schemas_for,
-    default_schema_for,
 )
-from app.repositories.fk_metadata import get_fk_info
-from app.domain.fk_analyzer import connect_tables, shortest_join_path
-from app.domain.column_masker import get_column_masker
-from app.services.annotation_service import get_table_descriptions, TableDescription
+from app.services.annotation_service import TableDescription, get_table_descriptions
 from app.services.search_service import SearchService
-from app.core.config import get_settings
 
 settings = get_settings()
 
