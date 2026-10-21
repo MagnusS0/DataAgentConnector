@@ -1,9 +1,9 @@
 import asyncio
 
 from app.core.config import get_settings
-from app.core.logging import get_logger
 from app.core.db_registry import DatabaseRegistry
-from app.repositories.sql_db import connection_scope, list_schemas, get_inspector
+from app.core.logging import get_logger
+from app.repositories.sql_db import connection_scope, get_inspector, list_schemas
 
 logger = get_logger(__name__)
 

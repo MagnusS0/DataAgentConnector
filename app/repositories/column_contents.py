@@ -4,9 +4,9 @@ from lancedb.query import BooleanQuery, DocumentGranularity, MatchQuery, Occur
 
 from app.models.lance import ColumnContent
 from app.repositories.lance_db import (
-    get_lance_db_async,
-    get_lance_db,
     batch_insert_async,
+    get_lance_db,
+    get_lance_db_async,
     open_or_create_table_async,
     sql_literal,
 )

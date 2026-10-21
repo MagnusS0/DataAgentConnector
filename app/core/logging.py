@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
+
 from rich.logging import RichHandler
+
 from app.core.config import get_settings
 
 settings = get_settings()

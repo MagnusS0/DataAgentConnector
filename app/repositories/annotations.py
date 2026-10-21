@@ -1,12 +1,12 @@
 from hashlib import sha256
 
+from app.core.db_registry import TableMetadata
 from app.models.lance import TableAnnotation
 from app.repositories.lance_db import (
-    get_lance_db_async,
     batch_insert_async,
+    get_lance_db_async,
     open_or_create_table_async,
 )
-from app.core.db_registry import TableMetadata
 
 
 class AnnotationRepository:

@@ -7,7 +7,7 @@ from sqlalchemy.engine import Connection, Engine, Inspector, RowMapping
 from sqlalchemy.exc import NoSuchTableError, ProgrammingError, StatementError
 
 from app.core.config import get_settings
-from app.core.db_registry import DatabaseRegistry, DatabaseConfig, TableMetadata
+from app.core.db_registry import DatabaseConfig, DatabaseRegistry, TableMetadata
 
 
 def get_registry() -> DatabaseRegistry:
@@ -27,7 +27,9 @@ def get_engine(database: str) -> Engine:
     allowed_commands = settings.allowed_sql_commands
 
     @event.listens_for(engine, "before_cursor_execute")
-    def enforce_read_only(conn, cursor, statement, parameters, context, executemany):
+    def enforce_read_only(
+        _conn, _cursor, statement, parameters, _context, _executemany
+    ):
         """Enforce read-only access by blocking non-SELECT statements."""
         normalized = statement.strip().upper()
 
@@ -46,7 +48,7 @@ def get_engine(database: str) -> Engine:
 @contextmanager
 def connection_scope(
     database: str, engine: Engine | None = None
-) -> Generator[Connection, None, None]:
+) -> Generator[Connection]:
     target_engine = engine or get_engine(database)
     with target_engine.connect() as conn:
         yield conn

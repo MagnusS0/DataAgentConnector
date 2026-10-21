@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from pydantic import BaseModel, Field
+
 from app.schemas.config import DatabaseConfig
 
 

@@ -1,13 +1,15 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Protocol
 from functools import lru_cache
+from itertools import pairwise
+from typing import Protocol
 
 import numpy as np
-from scipy.sparse import coo_matrix, csr_matrix, csr_array
+from scipy.sparse import coo_matrix, csr_array, csr_matrix
 from scipy.sparse.csgraph import (
-    shortest_path,
     connected_components,
     minimum_spanning_tree,
+    shortest_path,
 )
 
 from app.core.logging import get_logger
@@ -94,7 +96,7 @@ def _build_snapshot(fk_info: ForeignKeyInfo) -> FKSnapshot:
                 name=fk.get("name"),
                 from_table=t,
                 to_table=ref,
-                column_pairs=tuple(zip(cons, refs)),
+                column_pairs=tuple(zip(cons, refs, strict=True)),
             )
             edge_constraints.setdefault(frozenset({t, ref}), []).append(c)
 
@@ -206,11 +208,11 @@ def connect_tables(fk_info: ForeignKeyInfo, tables: Iterable[str]) -> list[JoinS
 
     # Expand MST edges back to original graph
     edges: set[tuple[int, int]] = set()
-    for i, j in zip(mst.row, mst.col):
+    for i, j in zip(mst.row, mst.col, strict=True):
         si, tj = term_idx[i], term_idx[j]
         path = _reconstruct_path(preds[i], si, tj)
-        edges.update({(u, v) for u, v in zip(path, path[1:])})
-        edges.update({(v, u) for u, v in zip(path, path[1:])})  # undirected
+        edges.update({(u, v) for u, v in pairwise(path)})
+        edges.update({(v, u) for u, v in pairwise(path)})  # undirected
 
     # BFS order over steiner edges starting at first terminal
     ordered = _bfs_edges_from(term_idx[0], edges)
@@ -255,7 +257,7 @@ def _edge_to_step(g: FKSnapshot, u: int, v: int) -> JoinStep:
 
 def _steps_from_path(g: FKSnapshot, path: list[int]) -> list[JoinStep]:
     """Convert a list of node indices into a list of JoinSteps."""
-    return [_edge_to_step(g, u, v) for u, v in zip(path, path[1:])]
+    return [_edge_to_step(g, u, v) for u, v in pairwise(path)]
 
 
 def _bfs_edges_from(

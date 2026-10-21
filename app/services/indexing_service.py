@@ -5,14 +5,14 @@ from typing import Literal
 from lancedb.index import FTS
 from lancedb.query import DocumentGranularity
 
-from app.repositories.column_contents import ColumnContentRepository
-from app.repositories.lance_db import get_lance_db_async, open_or_create_table_async
-from app.models.lance import ColumnContent
-from app.schemas.config import ExtractionOptions
-from app.domain.extract_colum_content import extract_column_contents
-from app.repositories.sql_db import list_schemas_for
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.domain.extract_colum_content import extract_column_contents
+from app.models.lance import ColumnContent
+from app.repositories.column_contents import ColumnContentRepository
+from app.repositories.lance_db import get_lance_db_async, open_or_create_table_async
+from app.repositories.sql_db import list_schemas_for
+from app.schemas.config import ExtractionOptions
 
 logger = get_logger(__name__)
 
@@ -132,7 +132,7 @@ class IndexingService:
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for database, result in zip(databases, results):
+        for database, result in zip(databases, results, strict=True):
             if isinstance(result, Exception):
                 logger.exception(
                     "Failed to create content index for database '%s'",

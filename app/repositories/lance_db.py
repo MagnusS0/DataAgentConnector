@@ -1,18 +1,16 @@
-from pathlib import Path
-from typing import TypeVar, Literal
 from functools import cache
-from async_lru import alru_cache
+from pathlib import Path
+from typing import Literal
 
 import lancedb
-from lancedb import DBConnection, AsyncConnection
+from async_lru import alru_cache
+from lancedb import AsyncConnection, DBConnection
+from lancedb.db import AsyncTable, Table
 from lancedb.pydantic import LanceModel
-from lancedb.db import Table, AsyncTable
 
 from app.core.config import get_settings
 
 settings = get_settings()
-
-T = TypeVar("T", bound=LanceModel)
 
 
 def sql_literal(value: str) -> str:
@@ -37,7 +35,7 @@ async def get_lance_db_async() -> AsyncConnection:
     return await lancedb.connect_async(db_path)
 
 
-def batch_insert(
+def batch_insert[T: LanceModel](
     table: Table,
     records: list[T] | T,
     *,
@@ -52,7 +50,7 @@ def batch_insert(
         table.add(records, mode=mode)
 
 
-async def batch_insert_async(
+async def batch_insert_async[T: LanceModel](
     table: AsyncTable,
     records: list[T] | T,
     *,
