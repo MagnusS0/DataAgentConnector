@@ -89,7 +89,20 @@ class IndexingService:
             config=index,
             name="content_idx",
         )
-        await table.wait_for_index(["content_idx"])
+        # Trigrams over the compacted values match partial words ("zeppel"),
+        # spelling variants ("brasil") and punctuation-free names ("acdc").
+        await table.create_index(
+            "compact_content",
+            replace=True,
+            config=FTS(
+                base_tokenizer="ngram",
+                stem=False,
+                remove_stop_words=False,
+                document_granularity=DocumentGranularity.LIST_ELEMENT,
+            ),
+            name="compact_content_idx",
+        )
+        await table.wait_for_index(["content_idx", "compact_content_idx"])
 
         logger.info(
             "FTS index for database '%s' (schemas: %s) created/updated with %d entries.",

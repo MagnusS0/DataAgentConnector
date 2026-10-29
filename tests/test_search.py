@@ -74,3 +74,20 @@ def test_service_output_format() -> None:
     assert out
     assert "Matching values:" in out[0]
     assert "`city`" in out[0]
+
+
+def test_partial_word_finds_value(repo: ColumnContentRepository) -> None:
+    results = repo.search_fts("bicyc")
+    values = [v for r in results for v in r["matched_values"]]
+    assert "Red Bicycle" in values
+
+
+def test_punctuation_free_query_finds_value(repo: ColumnContentRepository) -> None:
+    results = repo.search_fts("tshirt")
+    values = [v for r in results for v in r["matched_values"]]
+    assert "Metallica T-Shirt" in values
+
+
+def test_shared_trigrams_alone_do_not_match(repo: ColumnContentRepository) -> None:
+    # "helmsman" shares trigrams with "Blue Helmet" but is not part of it.
+    assert repo.search_fts("helmsman") == []

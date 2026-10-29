@@ -44,8 +44,9 @@ def batch_insert[T: LanceModel](
 ):
     """Insert records into a LanceDB table."""
     if isinstance(records, list):
+        # Only the first batch may overwrite; later ones append to it.
         for i in range(0, len(records), batch_size):
-            table.add(records[i : i + batch_size], mode=mode)
+            table.add(records[i : i + batch_size], mode=mode if i == 0 else "append")
     else:
         table.add(records, mode=mode)
 
@@ -59,8 +60,11 @@ async def batch_insert_async[T: LanceModel](
 ):
     """Asynchronously insert records into a LanceDB table."""
     if isinstance(records, list):
+        # Only the first batch may overwrite; later ones append to it.
         for i in range(0, len(records), batch_size):
-            await table.add(records[i : i + batch_size], mode=mode)
+            await table.add(
+                records[i : i + batch_size], mode=mode if i == 0 else "append"
+            )
     else:
         await table.add(records, mode=mode)
 

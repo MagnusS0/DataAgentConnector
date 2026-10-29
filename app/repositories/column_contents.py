@@ -1,8 +1,9 @@
 from typing import Literal
 
+from lancedb.db import Table
 from lancedb.query import BooleanQuery, DocumentGranularity, MatchQuery, Occur
 
-from app.models.lance import ColumnContent
+from app.models.lance import ColumnContent, compact
 from app.repositories.lance_db import (
     batch_insert_async,
     get_lance_db,
@@ -10,6 +11,9 @@ from app.repositories.lance_db import (
     open_or_create_table_async,
     sql_literal,
 )
+
+# Matches the n-gram index's trigrams; shorter queries have no n-grams to match.
+NGRAM_LENGTH = 3
 
 
 class ColumnContentRepository:
@@ -33,9 +37,13 @@ class ColumnContentRepository:
 
         Every value in `content` is scored as its own BM25 document. Exact matches
         are boosted over fuzzy (one edit) matches, so typos still find values
-        without outranking exact hits. Returns up to `top_k` columns, best first,
-        each with the `matched_values` scoring at least `value_score_ratio` of
-        that column's best value, which drops weak fuzzy matches on short words.
+        without outranking exact hits. Slots the word search leaves free are
+        filled from a trigram index with values that contain the query once
+        case, accents, spaces and punctuation are ignored, so "zeppel" finds
+        "Led Zeppelin" and "acdc" finds "AC/DC". Returns up to `top_k` columns,
+        word matches first, each with the `matched_values` scoring at least
+        `value_score_ratio` of that column's best value, which drops weak
+        matches on short words.
         """
         db = get_lance_db()
 
@@ -59,14 +67,99 @@ class ColumnContentRepository:
             prefix_length=1,
             document_granularity=per_value,
         )
+        word_hits = self._search_hits(
+            table,
+            BooleanQuery([(Occur.SHOULD, exact), (Occur.SHOULD, fuzzy)]),
+            target_schema,
+            max_hits,
+        )
+        columns = self._group_by_column(word_hits, value_score_ratio, limit=top_k)
 
-        try:
-            search = table.search(
-                BooleanQuery([(Occur.SHOULD, exact), (Occur.SHOULD, fuzzy)])
+        # Fill the remaining slots from trigrams, keeping only values that contain
+        # the whole query. A list-element query targets one field, so this runs apart.
+        compacted = compact(query)
+        substring_columns: dict[int, dict] = {}
+        if len(columns) < top_k and len(compacted) >= NGRAM_LENGTH:
+            ngram_hits = self._search_hits(
+                table,
+                MatchQuery(
+                    compacted, "compact_content", document_granularity=per_value
+                ),
+                target_schema,
+                max_hits,
             )
-            if target_schema:
-                search = search.where(f"schema_name = {sql_literal(target_schema)}")
-            hits = (
+            # No score cut-off here: the substring check below decides what stays.
+            substring_columns = {
+                row_id: column
+                for row_id, column in self._group_by_column(ngram_hits, 0.0).items()
+                if row_id not in columns
+            }
+
+        if not columns and not substring_columns:
+            return []
+
+        # Fetch each matched column's value list once, rather than once per hit.
+        contents = {
+            row["_rowid"]: row["content"]
+            for row in table.take_row_ids([*columns, *substring_columns])
+            .select(["content"])
+            .with_row_id()
+            .to_list()
+        }
+        for row_id, column in columns.items():
+            values = contents[row_id]
+            column["matched_values"] = [values[i] for i in column.pop("value_indexes")]
+        for row_id, column in substring_columns.items():
+            if len(columns) == top_k:
+                break
+            values = contents[row_id]
+            matched = [
+                values[i]
+                for i in column.pop("value_indexes")
+                if compacted in compact(values[i])
+            ]
+            if matched:
+                columns[row_id] = {**column, "matched_values": matched}
+
+        return list(columns.values())
+
+    @staticmethod
+    def _group_by_column(
+        hits: list[dict], value_score_ratio: float, *, limit: int | None = None
+    ) -> dict[int, dict]:
+        """Group per-value hits, best first, into at most `limit` columns."""
+        # One row holds one column, so hits sharing a row id share a column.
+        columns: dict[int, dict] = {}
+        for hit in hits:
+            row_id = hit["_rowid"]
+            if row_id not in columns:
+                if len(columns) == limit:
+                    continue
+                columns[row_id] = {
+                    "schema_name": hit["schema_name"],
+                    "table_name": hit["table_name"],
+                    "column_name": hit["column_name"],
+                    "num_distinct": hit["num_distinct"],
+                    "_score": hit["_score"],
+                    "value_indexes": [],
+                }
+            if hit["_score"] >= columns[row_id]["_score"] * value_score_ratio:
+                columns[row_id]["value_indexes"].extend(hit["_doc_index"])
+        return columns
+
+    def _search_hits(
+        self,
+        table: Table,
+        query: BooleanQuery | MatchQuery,
+        schema: str | None,
+        max_hits: int,
+    ) -> list[dict]:
+        """Run one per-value FTS query and return its hits, best first."""
+        try:
+            search = table.search(query)
+            if schema:
+                search = search.where(f"schema_name = {sql_literal(schema)}")
+            return (
                 search.select(
                     [
                         "schema_name",
@@ -87,41 +180,6 @@ class ColumnContentRepository:
                     f"Please re-run indexing."
                 ) from e
             raise
-
-        # Hits are per value and sorted by score; one row holds one column.
-        columns: dict[int, dict] = {}
-        for hit in hits:
-            row_id = hit["_rowid"]
-            if row_id not in columns:
-                if len(columns) == top_k:
-                    continue
-                columns[row_id] = {
-                    "schema_name": hit["schema_name"],
-                    "table_name": hit["table_name"],
-                    "column_name": hit["column_name"],
-                    "num_distinct": hit["num_distinct"],
-                    "_score": hit["_score"],
-                    "value_indexes": [],
-                }
-            if hit["_score"] >= columns[row_id]["_score"] * value_score_ratio:
-                columns[row_id]["value_indexes"].extend(hit["_doc_index"])
-
-        if not columns:
-            return []
-
-        # Fetch each matched column's value list once, rather than once per hit.
-        contents = {
-            row["_rowid"]: row["content"]
-            for row in table.take_row_ids(list(columns))
-            .select(["content"])
-            .with_row_id()
-            .to_list()
-        }
-        for row_id, column in columns.items():
-            values = contents[row_id]
-            column["matched_values"] = [values[i] for i in column.pop("value_indexes")]
-
-        return list(columns.values())
 
     async def get_by_table(
         self,
@@ -159,7 +217,14 @@ class ColumnContentRepository:
         if not contents:
             return
         db = await get_lance_db_async()
-        table = await open_or_create_table_async(
-            db, self.table_name, schema=ColumnContent
-        )
-        await batch_insert_async(table, contents, mode=mode)
+        if mode == "overwrite":
+            # Recreate rather than reopen, so a table written before a field was
+            # added takes the model's current schema.
+            table = await db.create_table(
+                self.table_name, schema=ColumnContent, mode="overwrite"
+            )
+        else:
+            table = await open_or_create_table_async(
+                db, self.table_name, schema=ColumnContent
+            )
+        await batch_insert_async(table, contents)

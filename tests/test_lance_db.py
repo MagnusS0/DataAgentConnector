@@ -1,10 +1,18 @@
+import asyncio
 from pathlib import Path
 
 import lancedb
 import pytest
 from lancedb.pydantic import LanceModel
 
-from app.repositories.lance_db import open_or_create_table, sql_literal
+from app.models.lance import ColumnContent
+from app.repositories.column_contents import ColumnContentRepository
+from app.repositories.lance_db import (
+    batch_insert,
+    get_lance_db,
+    open_or_create_table,
+    sql_literal,
+)
 
 
 class Narrow(LanceModel):
@@ -48,3 +56,33 @@ def test_opens_table_with_extra_column(tmp_path: Path) -> None:
     table.add([Narrow(name="b")])
 
     assert table.count_rows() == 2
+
+
+def test_overwrite_keeps_every_batch(tmp_path: Path) -> None:
+    db = lancedb.connect(tmp_path)
+    table = open_or_create_table(db, "t", Narrow)
+    table.add([Narrow(name="old")])
+
+    batch_insert(table, [Narrow(name=n) for n in "abc"], batch_size=2, mode="overwrite")
+
+    assert sorted(r["name"] for r in table.search().to_list()) == ["a", "b", "c"]
+
+
+def test_overwrite_replaces_an_older_schema() -> None:
+    get_lance_db().create_table(
+        "column_contents_upgrade", schema=Narrow, mode="overwrite"
+    )
+    content = ColumnContent(
+        database_name="upgrade",
+        schema_name="main",
+        table_name="bands",
+        column_name="name",
+        content=["AC/DC"],
+        num_distinct=1,
+    )
+
+    repo = ColumnContentRepository("upgrade")
+    asyncio.run(repo.save_batch([content], mode="overwrite"))
+
+    table = get_lance_db().open_table("column_contents_upgrade")
+    assert table.search().to_list()[0]["compact_content"] == ["acdc"]
