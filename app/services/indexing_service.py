@@ -89,10 +89,10 @@ class IndexingService:
             config=index,
             name="content_idx",
         )
-        # Trigrams over the compacted values match partial words ("zeppel"),
-        # spelling variants ("brasil") and punctuation-free names ("acdc").
+        # Trigrams match partial words ("zeppel") and names typed without
+        # spaces or punctuation ("tshirt"); the tokenizer splits on both.
         await table.create_index(
-            "compact_content",
+            "ngram_content",
             replace=True,
             config=FTS(
                 base_tokenizer="ngram",
@@ -100,9 +100,9 @@ class IndexingService:
                 remove_stop_words=False,
                 document_granularity=DocumentGranularity.LIST_ELEMENT,
             ),
-            name="compact_content_idx",
+            name="ngram_content_idx",
         )
-        await table.wait_for_index(["content_idx", "compact_content_idx"])
+        await table.wait_for_index(["content_idx", "ngram_content_idx"])
 
         logger.info(
             "FTS index for database '%s' (schemas: %s) created/updated with %d entries.",

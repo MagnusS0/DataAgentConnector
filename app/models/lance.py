@@ -1,5 +1,3 @@
-import re
-import unicodedata
 from hashlib import sha256
 
 from lancedb.pydantic import LanceModel
@@ -27,13 +25,6 @@ class TableAnnotation(LanceModel):
         return sha256(hash_input.encode("utf-8")).hexdigest()
 
 
-def compact(value: str) -> str:
-    """Fold case and accents and strip spaces and punctuation: "AC/DC" -> "acdc"."""
-    decomposed = unicodedata.normalize("NFKD", value)
-    unaccented = "".join(c for c in decomposed if not unicodedata.combining(c))
-    return re.sub(r"[\W_]+", "", unaccented.casefold())
-
-
 class ColumnContent(LanceModel):
     """Schema for column content values"""
 
@@ -43,8 +34,9 @@ class ColumnContent(LanceModel):
     table_name: str
     column_name: str
     content: list[str]
-    # One compacted copy per value, aligned with `content`, for the n-gram index.
-    compact_content: list[str] | None = None
+    # Copy of `content` for the trigram index: a query cannot pick between two
+    # indexes on one column, so each needs a column of its own.
+    ngram_content: list[str] | None = None
     num_distinct: int
 
     @field_validator("id_hash", mode="before")
@@ -64,8 +56,8 @@ class ColumnContent(LanceModel):
         return sha256(hash_input.encode("utf-8")).hexdigest()
 
     @model_validator(mode="after")
-    def compute_compact_content(self) -> "ColumnContent":
-        """Derive compacted values from content if not provided."""
-        if self.compact_content is None:
-            self.compact_content = [compact(value) for value in self.content]
+    def copy_ngram_content(self) -> "ColumnContent":
+        """Copy content for the trigram index if not provided."""
+        if self.ngram_content is None:
+            self.ngram_content = list(self.content)
         return self

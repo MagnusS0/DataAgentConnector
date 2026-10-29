@@ -102,8 +102,8 @@ DataAgentConnector/
   2. FTS indexing (`app/services/indexing_service.py`) persists values into LanceDB tables named
      `column_contents_<database>` and builds BM25 indexes that score each distinct value on its own.
      Searches boost exact matches over typo-tolerant (one edit) matches and return the matching values per column.
-     A trigram index over each value, with case, accents, spaces and punctuation stripped, fills any
-     remaining slots with values that contain the query, so `zeppel` finds `Led Zeppelin` and `acdc` finds `AC/DC`.
+     A trigram index over the same values fills any remaining slots with values that contain the query,
+     ignoring case, accents, spaces and punctuation, so `zeppel` finds `Led Zeppelin` and `tshirt` finds `T-Shirt`.
   3. Annotation workflow (`app/services/annotation_service.py`) runs LLM prompts with table metadata,
      previews, and sampled values (schema hashes used to skip already processed tables).
 

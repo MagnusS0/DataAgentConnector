@@ -1,9 +1,11 @@
+import re
+import unicodedata
 from typing import Literal
 
 from lancedb.db import Table
 from lancedb.query import BooleanQuery, DocumentGranularity, MatchQuery, Occur
 
-from app.models.lance import ColumnContent, compact
+from app.models.lance import ColumnContent
 from app.repositories.lance_db import (
     batch_insert_async,
     get_lance_db,
@@ -14,6 +16,13 @@ from app.repositories.lance_db import (
 
 # Matches the n-gram index's trigrams; shorter queries have no n-grams to match.
 NGRAM_LENGTH = 3
+
+
+def compact(value: str) -> str:
+    """Fold case and accents and strip spaces and punctuation: "T-Shirt" -> "tshirt"."""
+    decomposed = unicodedata.normalize("NFKD", value)
+    unaccented = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return re.sub(r"[\W_]+", "", unaccented.casefold())
 
 
 class ColumnContentRepository:
@@ -40,7 +49,7 @@ class ColumnContentRepository:
         without outranking exact hits. Slots the word search leaves free are
         filled from a trigram index with values that contain the query once
         case, accents, spaces and punctuation are ignored, so "zeppel" finds
-        "Led Zeppelin" and "acdc" finds "AC/DC". Returns up to `top_k` columns,
+        "Led Zeppelin" and "tshirt" finds "T-Shirt". Returns up to `top_k` columns,
         word matches first, each with the `matched_values` scoring at least
         `value_score_ratio` of that column's best value, which drops weak
         matches on short words.
@@ -75,16 +84,16 @@ class ColumnContentRepository:
         )
         columns = self._group_by_column(word_hits, value_score_ratio, limit=top_k)
 
-        # Fill the remaining slots from trigrams, keeping only values that contain
-        # the whole query. A list-element query targets one field, so this runs apart.
+        # Fill the remaining slots from trigrams. Shared trigrams alone are mostly
+        # noise, so keep only values that contain the whole query once case, accents,
+        # spaces and punctuation are ignored. A list-element query targets one
+        # field, so this runs as a second search.
         compacted = compact(query)
         substring_columns: dict[int, dict] = {}
         if len(columns) < top_k and len(compacted) >= NGRAM_LENGTH:
             ngram_hits = self._search_hits(
                 table,
-                MatchQuery(
-                    compacted, "compact_content", document_granularity=per_value
-                ),
+                MatchQuery(query, "ngram_content", document_granularity=per_value),
                 target_schema,
                 max_hits,
             )

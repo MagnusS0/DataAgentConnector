@@ -85,4 +85,4 @@ def test_overwrite_replaces_an_older_schema() -> None:
     asyncio.run(repo.save_batch([content], mode="overwrite"))
 
     table = get_lance_db().open_table("column_contents_upgrade")
-    assert table.search().to_list()[0]["compact_content"] == ["acdc"]
+    assert table.search().to_list()[0]["ngram_content"] == ["AC/DC"]
